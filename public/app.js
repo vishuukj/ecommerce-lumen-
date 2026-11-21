@@ -83,6 +83,21 @@ function addToCart(p, { qty = 1, color = null, size = null, silent = false } = {
   if (!silent) toast('Added to cart', { image: p.images[0], action: { href: '#/cart', label: 'View cart' } });
 }
 
+window.lumenAddFromRunway = function (item) {
+  if (!item || !item.id) return;
+  const cached = productCache.get(item.id);
+  const p = cached || {
+    id: item.id,
+    title: item.title,
+    price: item.price,
+    mrp: item.mrp || Math.round(item.price * 1.15),
+    images: [item.image],
+    stock: item.stock || 25,
+    category: 'fashion',
+  };
+  addToCart(p, { qty: item.qty || 1, size: item.size || null, silent: false });
+};
+
 function setQty(key, qty) {
   const it = state.cart.find((i) => i.key === key);
   if (!it) return;
@@ -167,7 +182,7 @@ function productCard(p, i = 0) {
       <img src="${esc(p.images[0])}" alt="${esc(p.title)}" loading="lazy" data-cat="${p.category}">
       ${p.images[1] ? `<img class="alt" src="${esc(p.images[1])}" alt="" loading="lazy">` : ''}
     </a>
-    <div class="card-badges">${badges}<span class="badge-3d">🧊 3D View</span></div>
+    <div class="card-badges">${badges}<span class="badge-3d">${p.category === 'fashion' ? '✨ Try the Look · 3D' : '🧊 3D View'}</span></div>
     <div class="card-actions">
       <button class="round-btn ${wished ? 'wished' : ''}" data-wish="${p.id}" aria-label="Add to wishlist" title="Wishlist">${ICON.heart}</button>
       <button class="round-btn quick" data-quick="${p.id}" aria-label="Quick view &amp; 3D" title="Quick 3D View">${ICON.eye}</button>
@@ -672,6 +687,7 @@ async function renderShop({ query, isCurrent }) {
     <div class="breadcrumbs"><a href="#/">Home</a> / <span>Shop</span></div>
     <h1 id="shopTitle">${esc(titleFor())}</h1>
   </div>
+  ${f.category.includes('fashion') && window.buildRunwaySectionHtml ? `<div class="container"><div class="rw-embedded-wrap">${window.buildRunwaySectionHtml('p1027')}</div></div>` : ''}
   <div class="container shop-layout">
     <aside class="filters" id="filters">
       <div class="filters-head"><b>Filters</b><button class="link-btn" id="clearFilters">Clear all</button></div>
@@ -1017,6 +1033,7 @@ async function renderProduct({ parts, isCurrent }) {
       <div class="view-mode-switch" id="viewModeSwitch">
         <button type="button" class="active" data-vmode="3d">🧊 3D Interactive Studio</button>
         <button type="button" data-vmode="2d">🖼️ 2D HD Photos (${p.images.length})</button>
+        ${p.category === 'fashion' ? '<button type="button" data-scroll-runway="1">✨ Try the Look · 3D Runway</button>' : ''}
       </div>
       <div class="gallery">
         <div class="thumbs">${p.images.map((src, i) => `<button class="${i === 0 ? 'active' : ''}" data-img="${i}" aria-label="Image ${i + 1}"><img src="${esc(src)}" alt="" data-cat="${p.category}"></button>`).join('')}</div>
@@ -1066,6 +1083,17 @@ async function renderProduct({ parts, isCurrent }) {
       <div id="tabPanel" class="tab-panel"></div>
     </div>
   </div>
+  ${p.category === 'fashion' && window.buildRunwaySectionHtml ? `
+  <section class="section container" id="productRunwaySection" style="padding-top:12px">
+    <div class="section-head">
+      <div>
+        <h2>Try the Look — 3D Fashion Runway</h2>
+        <p>Styled head to toe with <b>${esc(p.title)}</b>. Spin the 3D ring, isolate any look, tap a numbered pin, or add the full look directly to your cart.</p>
+      </div>
+      <a class="btn btn-sm" href="/runway">Open Fullscreen Runway →</a>
+    </div>
+    <div class="rw-embedded-wrap">${window.buildRunwaySectionHtml(p.id)}</div>
+  </section>` : ''}
   ${related.length ? `<section class="section container reveal"><div class="section-head"><div><h2>You may also like</h2><p>More from ${esc(cat?.name || '')}</p></div></div><div class="h-scroll">${related.map(productCard).join('')}</div></section>` : ''}`;
 
   // 3D Studio + 2D Gallery switch
@@ -1076,11 +1104,17 @@ async function renderProduct({ parts, isCurrent }) {
 
   const setViewMode = (mode) => {
     sel.mode = mode;
-    $$('#viewModeSwitch button').forEach((b) => b.classList.toggle('active', b.dataset.vmode === mode));
+    $$('#viewModeSwitch button[data-vmode]').forEach((b) => b.classList.toggle('active', b.dataset.vmode === mode));
     stageMount.hidden = mode !== '3d';
     main.hidden = mode !== '2d';
   };
-  $$('#viewModeSwitch button').forEach((b) => b.addEventListener('click', () => setViewMode(b.dataset.vmode)));
+  $$('#viewModeSwitch button[data-vmode]').forEach((b) => b.addEventListener('click', () => setViewMode(b.dataset.vmode)));
+  const rwJumpBtn = $('#viewModeSwitch button[data-scroll-runway]');
+  if (rwJumpBtn) {
+    rwJumpBtn.addEventListener('click', () => {
+      $('#productRunwaySection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
 
   $$('.thumbs button').forEach((b) => b.addEventListener('click', () => {
     $$('.thumbs button').forEach((x) => x.classList.toggle('active', x === b));

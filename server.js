@@ -92,6 +92,14 @@ if (!db.categories) db.categories = seed.categories.map((c) => ({ ...c }));
 if (!db.products) {
   // First run (or upgrade from the old format): seed products, applying any old stock overrides.
   db.products = seed.products.map((p) => ({ ...p, stock: db.stock?.[p.id] ?? p.stock, createdAt: new Date().toISOString() }));
+} else {
+  // Ensure any newly added seed catalog products (such as the Runway fashion pieces) exist in db.products.
+  const existingIds = new Set(db.products.map((p) => p.id));
+  for (const sp of seed.products) {
+    if (!existingIds.has(sp.id)) {
+      db.products.push({ ...sp, createdAt: new Date().toISOString() });
+    }
+  }
 }
 delete db.stock;
 for (const o of db.orders) if (!o.statusHistory) o.statusHistory = [{ status: o.status, at: o.createdAt }];

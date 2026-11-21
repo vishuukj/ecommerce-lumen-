@@ -285,6 +285,17 @@
     exportBtn.disabled = false;
   }
 
+  const LUMEN_PID_MAP = {
+    'tatum-5-orbit-copy': { id: 'p1027', title: 'Air Jordan 12 Retro', price: 4999, mrp: 6999, stock: 28 },
+    'tatum-5-orbit': { id: 'p1028', title: 'Tatum 5 Orbit', price: 5499, mrp: 7499, stock: 32 },
+    'air-jordan-12-retro-copy': { id: 'p1029', title: 'Luka 5', price: 4799, mrp: 6499, stock: 24 },
+    'tshirt': { id: 'p1030', title: 'Reign Graphic Jersey Tshirt', price: 1799, mrp: 2499, stock: 65 },
+    'sweatshirt': { id: 'p1031', title: 'Atelier Crewneck Sweatshirt', price: 2999, mrp: 4299, stock: 38 },
+    'sweatshirt-plus': { id: 'p1032', title: 'Verdo Varsity Sweatshirt Plus', price: 3499, mrp: 4999, stock: 22 },
+    'hoodie': { id: 'p1033', title: 'Studio Heather Graphic Hoodie', price: 3299, mrp: 4599, stock: 29 },
+    'hoodie-black': { id: 'p1034', title: 'Nocturne Star Graphic Hoodie Black', price: 3499, mrp: 4999, stock: 35 },
+  };
+
   const StylingBag = {
     add(items) {
       if (!Array.isArray(items) || !items.length) throw new Error('Please choose an available size.');
@@ -299,6 +310,20 @@
         const existing = bagEntries.find((e) => e.id === id);
         if (existing) existing.quantity = Math.min(20, existing.quantity + qty);
         else if (bagEntries.length < 50) bagEntries.push({ id, quantity: qty });
+
+        // If window.lumenAddFromRunway is registered (embedded inside Lumen storefront), sync into the live shopping cart
+        const found = VARIANT_MAP.get(id);
+        if (found && typeof window.lumenAddFromRunway === 'function') {
+          const mapInfo = LUMEN_PID_MAP[found.item.id];
+          if (mapInfo) {
+            window.lumenAddFromRunway({
+              ...mapInfo,
+              image: found.item.image,
+              size: found.variant.o[0] || null,
+              qty,
+            });
+          }
+        }
       }
       saveBag(bagEntries);
       renderBagDialog();
@@ -410,27 +435,31 @@
       this.C = 2 * Math.sqrt(this.K);
       this.lag = 0.04;
 
-      this.index = 0;
-      this.target = 0;
+      const initLook = clamp(Number(this.dataset.initialLook) || 0, 0, this.n - 1);
+      this.index = initLook;
+      this.target = initLook;
       const startOffset = this.reducedMotion ? 0 : 1.15;
-      this.cur = -startOffset;
+      this.cur = initLook - startOffset;
       this.vel = 0;
       this.still = false;
 
-      this.bodies = this.modelEls.map((el, a) => ({
-        el,
-        a,
-        look: a % this.n,
-        hit: el.querySelector('.rw__hit'),
-        w: 240,
-        x: a + startOffset,
-        g: a + startOffset,
-        v: 0,
-        goal: a,
-        from: a,
-        trip: false,
-        lastBlur: -1,
-      }));
+      this.bodies = this.modelEls.map((el, a) => {
+        const goal = mod(a - initLook, this.N);
+        return {
+          el,
+          a,
+          look: a % this.n,
+          hit: el.querySelector('.rw__hit'),
+          w: 240,
+          x: goal + startOffset,
+          g: goal + startOffset,
+          v: 0,
+          goal,
+          from: goal,
+          trip: false,
+          lastBlur: -1,
+        };
+      });
 
       this.W = 800;
       this.H = 600;
@@ -469,7 +498,7 @@
       this._initCursor();
       this._bindEvents();
       this.measure();
-      this.setIndex(0, true);
+      this.setIndex(initLook, true);
 
       if (this.dataset.autoplay === 'true' && !this.reducedMotion) {
         this.play(true);
@@ -569,7 +598,7 @@
         this.style.setProperty('--rw-frame-h', frameH + 'px');
       } else {
         let headerH = 0;
-        document.querySelectorAll('.shopify-section-group-header-group, #shopify-section-header, #shopify-section-announcement-bar').forEach((el) => {
+        document.querySelectorAll('.shopify-section-group-header-group, #shopify-section-header, #shopify-section-announcement-bar, #header').forEach((el) => {
           if (!el.contains(this)) {
             const r = el.getBoundingClientRect();
             if (r.height > 0) headerH += r.height;
@@ -1728,7 +1757,262 @@
     }
   }
 
-  customElements.define('runway-section', RunwaySection);
+  if (!customElements.get('runway-section')) {
+    customElements.define('runway-section', RunwaySection);
+  }
+
+  // ---------- Dynamic <runway-section> Builder for Each Fashion Product ----------
+  const RW_SEC_ID = 'template--28035983671601__the_runway_wdM8BG';
+  const RW_PRODUCTS = {
+    'tatum-5-orbit-copy': { name: 'Air Jordan 12 Retro', vendor: 'Nikey | Password: 1', price: '$149.00', img: ASSET_BASE + 'source-tatum-5-orbit-copy.webp', w: 400, h: 400, mw: 160, mh: 160, legend: 'Shoe size', options: ['40', '41', '42', '43', '44', '45', '46'], variants: [57015167025457, 57015167058225, 57015167090993, 57015167123761, 57015167156529, 57015167189297, 57015167222065], url: 'https://nike-makknzjs.myshopify.com/products/tatum-5-orbit-copy' },
+    'tshirt': { name: 'Tshirt', vendor: 'Nike', price: '$199.00', img: ASSET_BASE + 'source-tshirt.webp', w: 400, h: 563, mw: 160, mh: 225, legend: 'Size', options: ['S', 'L', 'M', 'XL'], variants: [56835911582001, 56835911614769, 56835911647537, 56835911680305], url: 'https://nike-makknzjs.myshopify.com/products/tshirt' },
+    'sweatshirt': { name: 'Sweatshirt', vendor: 'Nike', price: '$199.00', img: ASSET_BASE + 'source-sweatshirt.webp', w: 400, h: 581, mw: 160, mh: 232, legend: 'Size', options: ['S', 'L', 'M', 'XL'], variants: [56835806396721, 56835806429489, 56835806462257, 56835806495025], url: 'https://nike-makknzjs.myshopify.com/products/sweatshirt' },
+    'tatum-5-orbit': { name: 'Tatum 5 Orbit', vendor: 'Nikey | Password: 1', price: '$149.00', img: ASSET_BASE + 'source-tatum-5-orbit.webp', w: 400, h: 400, mw: 160, mh: 160, legend: 'Shoe size', options: ['40', '41', '42', '43', '44', '45', '46'], variants: [57015166730545, 57015166763313, 57015166796081, 57015166828849, 57015166861617, 57015166894385, 57015166927153], url: 'https://nike-makknzjs.myshopify.com/products/tatum-5-orbit' },
+    'hoodie-black': { name: 'Hoodie Black', vendor: 'Nike', price: '$199.00', img: ASSET_BASE + 'source-hoodie-black.webp', w: 400, h: 536, mw: 160, mh: 214, legend: 'Size', options: ['S', 'L', 'M', 'XL'], variants: [56836251681073, 56836251713841, 56836251746609, 56836251779377], url: 'https://nike-makknzjs.myshopify.com/products/hoodie-black' },
+    'sweatshirt-plus': { name: 'Sweatshirt Plus', vendor: 'Nike', price: '$199.00', img: ASSET_BASE + 'source-sweatshirt-plus.webp', w: 400, h: 610, mw: 160, mh: 244, legend: 'Size', options: ['S', 'L', 'M', 'XL'], variants: [56836143743281, 56836143776049, 56836143808817, 56836143841585], url: 'https://nike-makknzjs.myshopify.com/products/sweatshirt-plus' },
+    'hoodie': { name: 'Hoodie', vendor: 'Nike', price: '$199.00', img: ASSET_BASE + 'source-hoodie.webp', w: 400, h: 555, mw: 160, mh: 222, legend: 'Size', options: ['S', 'L', 'M', 'XL'], variants: [56836002185521, 56836002218289, 56836002251057, 56836002283825], url: 'https://nike-makknzjs.myshopify.com/products/hoodie' },
+    'air-jordan-12-retro-copy': { name: 'Luka 5', vendor: 'Nikey | Password: 1', price: '$149.00', img: ASSET_BASE + 'source-air-jordan-12-retro-copy.webp', w: 400, h: 400, mw: 160, mh: 160, legend: 'Shoe size', options: ['40', '41', '42', '43', '44', '45', '46'], variants: [57015176364337, 57015176397105, 57015176429873, 57015176462641, 57015176495409, 57015176528177, 57015176560945], url: 'https://nike-makknzjs.myshopify.com/products/air-jordan-12-retro-copy' },
+  };
+
+  const RW_LOOKS = [
+    { num: 1, idx: 0, key: 'bndthK', name: 'The City Edit', src640: ASSET_BASE + 'model-1-640.webp', src1080: ASSET_BASE + 'original-look-1.webp', items: [{ id: 'tatum-5-orbit-copy', x: '47%', y: '27%' }, { id: 'tshirt', x: '48%', y: '58%' }, { id: 'sweatshirt', x: '45%', y: '96%' }] },
+    { num: 2, idx: 1, key: 'XckgG6', name: 'Gallery Opening', src640: ASSET_BASE + 'model-5-640.webp', src1080: ASSET_BASE + 'original-look-5.webp', items: [{ id: 'tatum-5-orbit', x: '50%', y: '28%' }, { id: 'hoodie-black', x: '48%', y: '58%', tag: 'New' }, { id: 'tshirt', x: '45%', y: '88%' }] },
+    { num: 3, idx: 2, key: 'rLfAhC', name: 'Gallery Opening', src640: ASSET_BASE + 'model-4-640.webp', src1080: ASSET_BASE + 'original-look-4.webp', items: [{ id: 'sweatshirt-plus', x: '50%', y: '28%' }, { id: 'tatum-5-orbit', x: '48%', y: '58%', tag: 'New' }, { id: 'tshirt', x: '45%', y: '88%' }] },
+    { num: 4, idx: 3, key: 'FKg67q', name: 'Studio Day', src640: ASSET_BASE + 'model-6-640.webp', src1080: ASSET_BASE + 'original-look-6.webp', items: [{ id: 'hoodie-black', x: '50%', y: '28%' }, { id: 'tatum-5-orbit-copy', x: '48%', y: '58%' }, { id: 'tshirt', x: '45%', y: '88%' }] },
+    { num: 5, idx: 4, key: '8KREEE', name: 'Studio Day', src640: ASSET_BASE + 'model-3-640.webp', src1080: ASSET_BASE + 'original-look-3.webp', items: [{ id: 'sweatshirt', x: '50%', y: '28%' }, { id: 'tatum-5-orbit', x: '48%', y: '58%' }, { id: 'tshirt', x: '45%', y: '88%' }] },
+    { num: 6, idx: 5, key: 'N3bfm9', name: 'Studio Day', src640: ASSET_BASE + 'model-2-640.webp', src1080: ASSET_BASE + 'original-look-2.webp', items: [{ id: 'hoodie', x: '50%', y: '28%' }, { id: 'air-jordan-12-retro-copy', x: '48%', y: '58%' }, { id: 'tshirt', x: '45%', y: '88%' }] },
+  ];
+
+  // Maps each Lumen fashion product ID to its matching starting Runway look index (0..5)
+  const PRODUCT_LOOK_INDEX = {
+    p1003: 0, // Velocity Runner Sneakers -> Look 01: The City Edit
+    p1019: 3, // Rebel Leather Biker Jacket -> Look 04: Studio Day
+    p1020: 1, // Essential Organic Cotton Tee -> Look 02: Gallery Opening
+    p1021: 5, // Cloud Fleece Oversized Hoodie -> Look 06: Studio Day
+    p1025: 2, // Milano Structured Tote Bag -> Look 03: Gallery Opening
+    p1027: 0, // Air Jordan 12 Retro -> Look 01: The City Edit
+    p1028: 1, // Tatum 5 Orbit -> Look 02: Gallery Opening
+    p1029: 5, // Luka 5 -> Look 06: Studio Day
+    p1030: 1, // Reign Graphic Jersey Tshirt -> Look 02: Gallery Opening
+    p1031: 4, // Atelier Crewneck Sweatshirt -> Look 05: Studio Day
+    p1032: 2, // Verdo Varsity Sweatshirt Plus -> Look 03: Gallery Opening
+    p1033: 5, // Studio Heather Graphic Hoodie -> Look 06: Studio Day
+    p1034: 3, // Nocturne Star Graphic Hoodie Black -> Look 04: Studio Day
+  };
+
+  const RW_INLINE_TOKENS = '--rw-c-stage:#ffffff;--rw-c-panel:#ffffff;--rw-c-text:#151413;--rw-c-muted:#66625c;--rw-c-accent:#0e0e0e;--rw-c-on-accent:#ffffff;--rw-c-line:#c8c8c8;--rw-card:#DFDFDF;--rw-hf:var(--font-heading--family, inherit);--rw-hw:400;--rw-h-d:46px;--rw-h-m:24px;--rw-sub-d:12px;--rw-sub-m:12px;--rw-eyebrow-d:11px;--rw-eyebrow-m:10px;--rw-label-d:10px;--rw-label-m:9px;--rw-chip-d:17px;--rw-chip-m:18px;--rw-ph-d:18px;--rw-ph-m:16px;--rw-pt-size-d:13px;--rw-pt-size-m:12px;--rw-price-d:12px;--rw-price-m:12px;--rw-opt-d:11px;--rw-opt-m:11px;--rw-total-d:16px;--rw-total-m:16px;--rw-thumb-d:92px;--rw-thumb-m:62px;--rw-tag-top:18px;--rw-tag-left:0px;--rw-thumb-radius:0px;--rw-morph:900ms;--rw-bar-r:20px;--rw-panel-w:380px;--rw-panel-pad-d:32px;--rw-radius:0px;--rw-max:none;--rw-speed:5s;--rw-ax:40%;--rw-btn-radius:0px;--rw-pill-radius:30px;--rw-add-radius:20px';
+
+  window.buildRunwaySectionHtml = function (productId) {
+    let startLook = PRODUCT_LOOK_INDEX[productId];
+    if (startLook === undefined) {
+      const n = parseInt(String(productId || '').replace(/\D/g, ''), 10) || 0;
+      startLook = n % 6;
+    }
+    const uid = RW_SEC_ID + '_' + (productId || 'main');
+    const imgTag = (l) => `<img src="${l.src640}" srcset="${l.src640} 640w, ${l.src1080} 1080w" sizes="(min-width: 1800px) 540px, (min-width: 750px) 420px, 320px" loading="eager" decoding="async" width="1100" height="1956" draggable="false" data-model-image alt="${l.name}">`;
+
+    const bodiesHtml = RW_LOOKS.map((l) => `
+      <div class="rw__model" data-rw-model data-index="${l.idx}" aria-hidden="true">
+        <span class="rw__shadow"></span>
+        <div class="rw__figure" style="--rw-ar: 0.5625">
+          <div class="rw__art">
+            ${imgTag(l)}
+            <button type="button" class="rw__hit" data-rw-go="${l.idx}" aria-label="Look ${l.num}: ${l.name}" tabindex="-1"></button>
+          </div>
+        </div>
+      </div>`).join('');
+
+    const heroesHtml = RW_LOOKS.map((l) => {
+      const pins = l.items.map((it, k) => {
+        const n = k + 1;
+        const p = RW_PRODUCTS[it.id];
+        return `<button type="button" class="rw__pin" data-rw-pin="${n}" data-tip="${p.name}" style="left:${it.x}; top:${it.y}; --pi:${n}" aria-label="${n}: ${p.name}" tabindex="-1"><span class="rw__pin-dot">${n}</span></button>`;
+      }).join('');
+      return `
+      <div class="rw__hero${l.idx === startLook ? ' is-on' : ''}" data-rw-hero data-index="${l.idx}" data-name="${l.name}" data-label="Look ${l.num}: ${l.name}" data-probe="${l.src640}"${l.idx === startLook ? '' : ' aria-hidden="true"'}>
+        <div class="rw__morph">
+          <span class="rw__shadow"></span>
+          <div class="rw__figure" style="--rw-ar: 0.5625">
+            <div class="rw__art">
+              ${imgTag(l)}
+              <button type="button" class="rw__zoom" data-rw-zoom aria-label="View look: ${l.name}" tabindex="${l.idx === startLook ? '0' : '-1'}"></button>
+              <div class="rw__pins">${pins}</div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    const ticksHtml = RW_LOOKS.map((l) => `
+      <button type="button" class="rw__tick" data-rw-tick="${l.idx}" aria-current="${l.idx === startLook ? 'true' : 'false'}" aria-label="Look ${l.num}: ${l.name}">
+        <span class="rw__tick-bar"></span>
+        <span class="rw__tick-label">${String(l.num).padStart(2, '0')}<span class="rw__tick-name">&nbsp;&nbsp;${l.name}</span></span>
+      </button>`).join('');
+
+    const panelsHtml = RW_LOOKS.map((l) => {
+      const rows = l.items.map((it, k) => {
+        const n = k + 1;
+        const p = RW_PRODUCTS[it.id];
+        const pickerId = `Picker-${uid}-look_${l.key}-${n}`;
+        const optName = `Opt-${uid}-look_${l.key}-${n}-1`;
+        const variantsJson = JSON.stringify(p.options.map((val, idx) => ({ id: p.variants[idx], a: true, o: [val] })));
+        const pills = p.options.map((val, idx) => `
+          <label class="rw__pill">
+            <input type="radio" name="${optName}" value="${val}" data-rw-option="0"${idx === 0 ? ' checked' : ''}>
+            <span class="rw__pill-label">${val}</span>
+          </label>`).join('');
+        return `
+          <li class="rw__item" data-rw-card="${n}" style="--i:${n}" data-title="${p.name}">
+            ${it.tag ? `<span class="rw__tag"><span class="rw__tag-text">${it.tag}</span></span>` : ''}
+            <a class="rw__media" href="${p.url}" target="_blank" rel="noopener noreferrer" tabindex="-1" aria-hidden="true">
+              <img src="${p.img}" loading="lazy" decoding="async" width="${p.w}" height="${p.h}" alt="">
+              <span class="rw__num">${n}</span>
+            </a>
+            <div class="rw__info">
+              <span class="rw__type">${p.vendor}</span>
+              <a class="rw__name" href="${p.url}" target="_blank" rel="noopener noreferrer">${p.name}</a>
+              <span class="rw__price"><span>${p.price}</span></span>
+            </div>
+            <button type="button" class="rw__add" data-rw-add aria-expanded="false" aria-controls="${pickerId}" aria-label="Add to bag: ${p.name}" data-added-label="Added to bag: ${p.name}">
+              <svg class="rw__ico-plus" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M12 4v16M4 12h16"/></svg>
+              <svg class="rw__ico-check" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5L19.5 7"/></svg>
+              <svg class="rw__ico-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 3a9 9 0 1 1-9 9"/></svg>
+            </button>
+            <div class="rw__picker" id="${pickerId}" data-rw-picker hidden>
+              <div class="rw__picker-head">
+                <img class="rw__picker-thumb" src="${p.img}" loading="lazy" decoding="async" width="${p.mw}" height="${p.mh}" alt="">
+                <div class="rw__picker-meta">
+                  <span class="rw__picker-title">${p.name}</span>
+                  <span class="rw__picker-price">${p.price}</span>
+                </div>
+                <button type="button" class="rw__picker-close" data-rw-pick-close aria-label="Close">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>
+                </button>
+              </div>
+              <fieldset class="rw__opt">
+                <legend class="rw__opt-name">${p.legend}</legend>
+                <div class="rw__opt-values">${pills}</div>
+              </fieldset>
+              <button type="button" class="rw__confirm" data-rw-confirm>
+                <span data-rw-confirm-label data-add="Add to bag">Add to bag</span>
+                <span class="rw__sr"> — ${p.name}</span>
+              </button>
+              <script type="application/json" data-rw-variants>${variantsJson}</script>
+            </div>
+          </li>`;
+      }).join('');
+
+      return `
+      <div class="rw__look-panel${l.idx === startLook ? ' is-in' : ''}" data-rw-panel="${l.idx}"${l.idx === startLook ? '' : ' hidden'}>
+        <div class="rw__mhead">
+          <span class="rw__mhead-title">${l.name}</span>
+          <span class="rw__label">3 pieces</span>
+        </div>
+        <ul class="rw__items" role="list">${rows}</ul>
+        <div class="rw__bundle has-rule">
+          <p class="rw__msg" data-rw-msg role="status" aria-live="polite"></p>
+          <div class="rw__bundle-row">
+            <div class="rw__bundle-copy">
+              <span class="rw__bundle-title">Complete the look</span>
+              <span class="rw__bundle-note">Bundle all 3 and save 10%</span>
+            </div>
+            <div class="rw__bundle-price">
+              <s>$547.00</s>
+              <strong>$492.30</strong>
+            </div>
+          </div>
+          <button type="button" class="rw__cta" data-rw-all>
+            <span class="rw__cta-add">Add full look to bag</span>
+            <span class="rw__cta-m">Add full look — $492.30</span>
+            <span class="rw__cta-done">Full look in your bag</span>
+            <svg class="rw__cta-arrow" width="22" height="12" viewBox="0 0 26 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1 7h24M19 1l6 6-6 6"/></svg>
+            <svg class="rw__cta-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3a9 9 0 1 1-9 9"/></svg>
+          </button>
+        </div>
+        <template data-rw-pieces-text>3 pieces</template>
+      </div>`;
+    }).join('');
+
+    return `
+    <runway-section
+      id="Runway-${uid}"
+      class="rw rw--add-icon rw--popup rw--list has-dividers has-border"
+      data-feel="balanced"
+      data-blur="true"
+      data-mblur="true"
+      data-style="ring"
+      data-mstyle="classic"
+      data-fit="true"
+      data-height-mode="original"
+      data-height-vh="100"
+      data-mheight-mode="custom"
+      data-mheight-vh="109"
+      data-reflect="false"
+      data-autoplay="true"
+      data-speed="5000"
+      data-after-add="stay"
+      data-bundle-code=""
+      data-initial-look="${startLook}"
+      data-msg-choose="Pick a size for: [items]"
+      data-msg-error="Couldn’t add to bag. Please try again."
+      data-msg-soldout="Sold out"
+      style="${RW_INLINE_TOKENS}">
+      <div class="rw__sticky">
+        <div class="rw__grid">
+          <div class="rw__left">
+            <div class="rw__head">
+              <div class="rw__intro">
+                <h2 class="rw__title">Try the Look.</h2>
+                <p class="rw__sub">Six looks, styled head to toe. Tap a pin to see the piece.</p>
+              </div>
+              <span class="rw__sr" aria-live="polite" aria-atomic="true" data-rw-live></span>
+            </div>
+            <div class="rw__stage" data-rw-stage tabindex="0" role="region" aria-roledescription="carousel" aria-label="Try the Look. — use arrow keys or swipe to change look">
+              <div class="rw__actors" data-rw-actors>${bodiesHtml}</div>
+              <div class="rw__heroes" data-rw-heroes>${heroesHtml}</div>
+              <span class="rw__sweep"></span>
+              <span class="rw__cursor" data-rw-cursor><span class="rw__cursor-in"><span class="rw__cursor-label rw__cursor-drag">Drag</span><span class="rw__cursor-label rw__cursor-view">View</span></span></span>
+              <span class="rw__walk"><span class="rw__walk-line"></span></span>
+            </div>
+            <div class="rw__controls">
+              <button type="button" class="rw__icon" data-rw-prev aria-label="Previous look">
+                <svg width="26" height="14" viewBox="0 0 26 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M25 7H1M7 1L1 7l6 6"/></svg>
+              </button>
+              <div class="rw__ticks">${ticksHtml}</div>
+              <button type="button" class="rw__icon rw__auto" data-rw-auto aria-pressed="false" aria-label="Autoplay">
+                <svg class="rw__play-ico" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12.5-7.5z"/></svg>
+                <svg class="rw__pause-ico" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6.5 4.5h3.5v15H6.5zM14 4.5h3.5v15H14z"/></svg>
+              </button>
+              <button type="button" class="rw__icon" data-rw-next aria-label="Next look">
+                <svg width="26" height="14" viewBox="0 0 26 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 7h24M19 1l6 6-6 6"/></svg>
+              </button>
+            </div>
+            <div class="rw__lb" data-rw-lb data-word="Look" role="region" aria-label="View look" aria-hidden="true">
+              <div class="rw__lb-stage" data-rw-lb-stage></div>
+              <div class="rw__lb-top">
+                <p class="rw__lb-cap">
+                  <span class="rw__lb-kicker" data-rw-lb-kicker></span>
+                  <span class="rw__lb-name" data-rw-lb-name></span>
+                </p>
+                <button type="button" class="rw__lb-close" data-rw-zoom-close aria-label="Close">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>
+                </button>
+              </div>
+              <p class="rw__lb-hint">Tap a dot to shop the piece</p>
+            </div>
+          </div>
+          <div class="rw__panel has-rule">
+            <div class="rw__panel-inner">
+              <div class="rw__panel-head">
+                <h3 class="rw__panel-title">In this look</h3>
+                <span class="rw__label" data-rw-pieces>3 pieces</span>
+              </div>${panelsHtml}
+            </div>
+          </div>
+        </div>
+      </div>
+    </runway-section>`;
+  };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initBagUI);
