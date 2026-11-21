@@ -255,10 +255,18 @@ function closeDrawers() {
 }
 
 function shipProgressHtml(sub) {
-  const left = FREE_SHIP - sub;
+  const left = Math.max(0, FREE_SHIP - sub);
   const pct = Math.min(100, (sub / FREE_SHIP) * 100);
-  return `${left > 0 ? `Add <b>${money(left)}</b> more for <b>FREE shipping</b> 🚚` : '🎉 You\'ve unlocked <b>FREE shipping!</b>'}
+  return `${left > 0 ? `Spend <b>${money(left)}</b> more to unlock <b>FREE shipping</b> (Free over ${money(FREE_SHIP)}) 🚚` : '🎉 You qualify for <b>FREE Standard Shipping!</b>'}
     <div class="bar"><i style="width:${pct}%"></i></div>`;
+}
+
+function estDeliveryRange(method = 'standard') {
+  const minDays = method === 'express' ? 1 : 3;
+  const maxDays = method === 'express' ? 2 : 5;
+  const d1 = fmtDate(Date.now() + minDays * 86400000, { weekday: 'short', day: 'numeric', month: 'short' });
+  const d2 = fmtDate(Date.now() + maxDays * 86400000, { weekday: 'short', day: 'numeric', month: 'short' });
+  return `${d1} – ${d2}`;
 }
 
 function cartItemHtml(it) {
@@ -272,15 +280,18 @@ function cartItemHtml(it) {
         ${it.size ? `<span>Size ${esc(it.size)}</span>` : ''}
         <span>${money(it.price)} each</span>
       </div>
-      <div class="qty sm">
-        <button data-qty="${esc(it.key)}" data-delta="-1" aria-label="Decrease">−</button>
-        <span>${it.qty}</span>
-        <button data-qty="${esc(it.key)}" data-delta="1" aria-label="Increase" ${it.qty >= Math.min(10, it.stock) ? 'disabled' : ''}>+</button>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div class="qty sm">
+          <button type="button" data-qty="${esc(it.key)}" data-delta="-1" aria-label="Decrease quantity">−</button>
+          <span>${it.qty}</span>
+          <button type="button" data-qty="${esc(it.key)}" data-delta="1" aria-label="Increase quantity" ${it.qty >= Math.min(10, it.stock) ? 'disabled' : ''}>+</button>
+        </div>
+        <span class="muted" style="font-size:.75rem">🚚 Est. delivery: <b>${estDeliveryRange('standard')}</b></span>
       </div>
     </div>
     <div class="ci-right">
       <b>${money(it.price * it.qty)}</b>
-      <button class="link-btn" data-remove="${esc(it.key)}">Remove</button>
+      <button type="button" class="link-btn" data-remove="${esc(it.key)}">🗑 Remove</button>
     </div>
   </div>`;
 }
@@ -297,14 +308,16 @@ function renderDrawer() {
   }
   $('#drawerBody').innerHTML = state.cart.map(cartItemHtml).join('');
   const savings = state.cart.reduce((s, i) => s + (i.mrp - i.price) * i.qty, 0);
+  const shipCharge = (sub >= FREE_SHIP || state.coupon === 'FREESHIP') ? 0 : 79;
+  const finalTotal = sub + shipCharge;
   $('#drawerFoot').innerHTML = `
-    <div class="sum-row"><span>Subtotal</span><b>${money(sub)}</b></div>
-    ${savings ? `<div class="sum-row"><span>You save</span><span class="green">${money(savings)}</span></div>` : ''}
-    <p class="muted" style="font-size:.8rem;margin:4px 0 14px">Taxes included. Shipping & coupons calculated at checkout.</p>
-    <div class="grid-2">
-      <a class="btn" href="#/cart" data-close-drawer>View cart</a>
-      <a class="btn btn-primary" href="#/checkout" data-close-drawer>Checkout</a>
-    </div>`;
+    <div class="est-delivery-box"><span>📅</span><div>Estimated delivery: <b>${estDeliveryRange('standard')}</b></div></div>
+    <div class="sum-row"><span>Subtotal (${cartCount()} ${cartCount() === 1 ? 'item' : 'items'})</span><b>${money(sub)}</b></div>
+    <div class="sum-row"><span>Shipping charges</span><b>${shipCharge === 0 ? '<span class="green">FREE</span>' : money(shipCharge)}</b></div>
+    ${savings ? `<div class="sum-row"><span>Total savings</span><span class="green">− ${money(savings)}</span></div>` : ''}
+    <div class="sum-row total"><span>Final Total</span><b>${money(finalTotal)}</b></div>
+    <a class="btn btn-primary btn-block btn-checkout-cta" href="#/checkout" data-close-drawer style="margin-top:12px">${ICON.lock} Proceed to Checkout · ${money(finalTotal)} ${ICON.arrow}</a>
+    <a class="btn btn-ghost btn-sm btn-block" href="#/cart" data-close-drawer style="margin-top:6px">View full cart &amp; apply coupons</a>`;
 }
 
 // ---------- Header behaviours ----------
@@ -1000,21 +1013,29 @@ async function renderSummary(el, { cta = false, shippingMethod = 'standard', ite
     el.innerHTML = `<p style="color:var(--danger)">${esc(err.message)}</p>`;
     return null;
   }
+  const leftForFree = Math.max(0, FREE_SHIP - (quote.subtotal - quote.discount));
   el.innerHTML = `
     <h3>Order summary</h3>
     ${items ? `<div class="mini-items">${state.cart.map((i) => `<div class="mini-item"><div class="thumb"><img src="${esc(i.image)}" alt="" data-cat="${i.category}"><i>${i.qty}</i></div><span class="mi-title">${esc(i.title)}${i.size ? ` · ${esc(i.size)}` : ''}</span><b>${money(i.price * i.qty)}</b></div>`).join('')}</div>` : ''}
+    <div class="est-delivery-box">
+      <span>🚚</span>
+      <div>
+        <div>Estimated delivery: <b>${estDeliveryRange(quote.shippingMethod)}</b></div>
+        <div class="muted" style="font-size:.76rem">${quote.shipping === 0 ? '🎉 Eligible for FREE delivery' : `Spend ${money(leftForFree)} more to qualify for FREE delivery`}</div>
+      </div>
+    </div>
     ${quote.coupon
       ? `<div class="applied"><span>🏷️ ${esc(quote.coupon.code)} — ${esc(quote.coupon.label)}</span><button class="link-btn" id="rmCoupon">Remove</button></div>`
       : `<form class="coupon-row" id="couponForm"><input class="input" name="code" placeholder="Coupon code" aria-label="Coupon code"><button class="btn btn-sm" style="height:42px">Apply</button></form>
          <div class="coupon-hints"><span class="muted" style="font-size:.75rem">Try:</span>${['WELCOME10', 'FLAT500', 'FREESHIP'].map((c) => `<button type="button" data-coupon="${c}">${c}</button>`).join('')}</div>`}
     <div style="margin-top:16px">
-      <div class="sum-row"><span>Subtotal</span><span>${money(quote.subtotal)}</span></div>
-      ${quote.discount ? `<div class="sum-row"><span>Discount</span><span class="green">− ${money(quote.discount)}</span></div>` : ''}
-      <div class="sum-row"><span>Shipping ${quote.shippingMethod === 'express' ? '(Express)' : ''}</span><span>${quote.shipping ? money(quote.shipping) : '<span class="green">FREE</span>'}</span></div>
-      <div class="sum-row total"><span>Total</span><span>${money(quote.total)}</span></div>
+      <div class="sum-row"><span>Subtotal (${cartCount()} ${cartCount() === 1 ? 'item' : 'items'})</span><b>${money(quote.subtotal)}</b></div>
+      ${quote.discount ? `<div class="sum-row"><span>Coupon discount (${esc(quote.coupon.code)})</span><span class="green">− ${money(quote.discount)}</span></div>` : ''}
+      <div class="sum-row"><span>Shipping charges ${quote.shippingMethod === 'express' ? '(Express)' : '(Standard)'}</span><b>${quote.shipping ? money(quote.shipping) : '<span class="green">FREE (₹0)</span>'}</b></div>
+      <div class="sum-row total"><span>Final Total</span><span>${money(quote.total)}</span></div>
     </div>
-    ${cta ? `<a class="btn btn-primary btn-block" href="#/checkout" style="margin-top:16px;height:52px">Proceed to checkout ${ICON.arrow}</a>` : ''}
-    <div class="secure-note">${ICON.lock} Secure checkout · 100% purchase protection</div>`;
+    ${cta ? `<a class="btn btn-primary btn-block btn-checkout-cta" href="#/checkout" style="margin-top:16px">${ICON.lock} Proceed to Checkout · ${money(quote.total)} ${ICON.arrow}</a>` : ''}
+    <div class="secure-note">${ICON.lock} Guest &amp; member checkout · UPI, Cards, NetBanking &amp; COD</div>`;
 
   const apply = async (code) => {
     state.coupon = code.trim().toUpperCase();
@@ -1357,10 +1378,13 @@ async function renderCheckout() {
   };
 
   app.innerHTML = `
-  <div class="container page-head"><div class="breadcrumbs"><a href="#/">Home</a> / <a href="#/cart">Cart</a> / <span>Checkout</span></div><h1>Checkout</h1></div>
+  <div class="container page-head"><div class="breadcrumbs"><a href="#/">Home</a> / <a href="#/cart">Cart</a> / <span>Checkout</span></div><h1>Express Checkout</h1></div>
   <div class="container two-col">
     <div>
-      <div class="steps" id="steps">${['Address', 'Delivery', 'Payment'].map((s, i) => `<div class="step" data-step="${i + 1}"><span class="num">${i + 1}</span><span class="label">${s}</span></div>`).join('')}</div>
+      ${state.user
+        ? `<div class="guest-banner"><span>👋 Signed in as <b>${esc(state.user.name)}</b> (${esc(state.user.email)})</span><span class="chip" style="font-size:.76rem">✔ Verified Member</span></div>`
+        : `<div class="guest-banner"><span>⚡ <b>Guest Checkout enabled</b> — no account required to place your order.</span><a href="#/account" style="color:var(--primary);font-weight:700">Have an account? Sign in →</a></div>`}
+      <div class="steps" id="steps">${['1. Address & Delivery', '2. Payment'].map((s, i) => `<div class="step" data-step="${i + 1}"><span class="num">${i + 1}</span><span class="label">${s}</span></div>`).join('')}</div>
       <div id="stepBody"></div>
     </div>
     <aside class="panel sticky" id="coSummary">${summarySkeleton()}</aside>
@@ -1389,10 +1413,22 @@ async function renderCheckout() {
   const field = (name, label, attrs = '', cls = '') => `
     <div class="field ${cls}"><label for="f_${name}">${label}</label><input class="input" id="f_${name}" name="${name}" value="${esc(co.address[name] || '')}" ${attrs}><span class="err"></span></div>`;
 
+  const PAY_TABS = [
+    ['razorpay', '⚡', 'Razorpay', 'UPI, Cards, Wallets'],
+    ['upi', '📱', 'UPI Direct', 'QR, GPay, PhonePe'],
+    ['card', '💳', 'Card', 'Visa, Master, RuPay'],
+    ['netbanking', '🏦', 'NetBanking', '40+ Indian Banks'],
+    ['emi', '📅', 'Bank EMI', '0% No-Cost EMI'],
+    ['cod', '💵', 'Cash / COD', 'Pay on delivery'],
+  ];
+
   const steps = {
-    1: () => `
+    1: () => {
+      const d = (n) => fmtDate(Date.now() + n * 86400000, { weekday: 'short', day: 'numeric', month: 'short' });
+      const freeStd = cartSubtotal() >= FREE_SHIP || state.coupon === 'FREESHIP';
+      return `
       <form class="panel" id="addrForm" novalidate>
-        <h3>📍 Shipping address</h3>
+        <h3>📍 Shipping address &amp; delivery speed</h3>
         ${userAddrs.length ? `
           <div style="margin-bottom:14px">
             <span class="muted" style="font-size:.82rem;display:block;margin-bottom:8px">Saved addresses:</span>
@@ -1401,38 +1437,39 @@ async function renderCheckout() {
         <div class="grid-2">
           ${field('name', 'Full name', 'autocomplete="name" required')}
           ${field('phone', 'Phone number', 'inputmode="tel" autocomplete="tel" maxlength="10" placeholder="10-digit mobile" required')}
-          ${state.user ? '' : field('email', 'Email (for order updates)', 'type="email" autocomplete="email" required', 'span-2')}
+          ${state.user ? '' : field('email', 'Email (for guest receipt & tracking)', 'type="email" autocomplete="email" placeholder="you@example.com" required', 'span-2')}
           ${field('line1', 'Address (house no, building, street)', 'autocomplete="address-line1" required', 'span-2')}
           ${field('line2', 'Landmark / area (optional)', 'autocomplete="address-line2"', 'span-2')}
           ${field('city', 'City', 'autocomplete="address-level2" required')}
           <div class="field"><label for="f_state">State</label><select class="input" id="f_state" name="state" required><option value="">Select state</option>${STATES.map((s) => `<option ${co.address.state === s ? 'selected' : ''}>${s}</option>`).join('')}</select><span class="err"></span></div>
           ${field('pincode', 'PIN code', 'inputmode="numeric" maxlength="6" autocomplete="postal-code" required')}
         </div>
-        <label class="check" style="margin-top:10px"><input type="checkbox" name="save" checked> Save this address for next time</label>
-        <button class="btn btn-primary" style="margin-top:16px;min-width:220px">Continue to delivery ${ICON.arrow}</button>
-      </form>`,
-    2: () => {
-      const d = (n) => fmtDate(Date.now() + n * 86400000, { weekday: 'short', day: 'numeric', month: 'short' });
-      const freeStd = cartSubtotal() >= FREE_SHIP || state.coupon === 'FREESHIP';
-      return `
-      <div class="panel">
-        <h3>🚚 Delivery method</h3>
-        <p class="muted" style="margin-top:-4px">Delivering to <b>${esc(co.address.name)}</b>, ${esc(co.address.line1)}, ${esc(co.address.city)} ${esc(co.address.pincode)} · <a href="#" id="editAddr" style="color:var(--primary)">Edit</a></p>
-        <label class="option-card ${co.shipping === 'standard' ? 'active' : ''}"><input type="radio" name="ship" value="standard" ${co.shipping === 'standard' ? 'checked' : ''}><div class="oc-body"><b>Standard delivery</b><span>Arrives by ${d(5)}</span></div><b>${freeStd ? 'FREE' : money(79)}</b></label>
-        <label class="option-card ${co.shipping === 'express' ? 'active' : ''}"><input type="radio" name="ship" value="express" ${co.shipping === 'express' ? 'checked' : ''}><div class="oc-body"><b>Express delivery ⚡</b><span>Arrives by ${d(2)}</span></div><b>${state.coupon === 'FREESHIP' ? 'FREE' : money(149)}</b></label>
-        <button class="btn btn-primary" id="toPay" style="margin-top:8px;min-width:220px">Continue to payment ${ICON.arrow}</button>
-      </div>`;
+
+        <h3 style="margin:20px 0 10px">🚚 Choose delivery speed</h3>
+        <div class="grid-2">
+          <label class="option-card ${co.shipping === 'standard' ? 'active' : ''}" style="margin:0"><input type="radio" name="ship" value="standard" ${co.shipping === 'standard' ? 'checked' : ''}><div class="oc-body"><b>Standard Delivery</b><span>Est. arrival: ${d(3)} – ${d(5)}</span></div><b>${freeStd ? '<span style="color:var(--success)">FREE</span>' : money(79)}</b></label>
+          <label class="option-card ${co.shipping === 'express' ? 'active' : ''}" style="margin:0"><input type="radio" name="ship" value="express" ${co.shipping === 'express' ? 'checked' : ''}><div class="oc-body"><b>Express Delivery ⚡</b><span>Est. arrival: ${d(1)} – ${d(2)}</span></div><b>${state.coupon === 'FREESHIP' ? '<span style="color:var(--success)">FREE</span>' : money(149)}</b></label>
+        </div>
+
+        <label class="check" style="margin-top:12px"><input type="checkbox" name="save" checked> Save this address for faster checkout next time</label>
+        <button class="btn btn-primary btn-block btn-checkout-cta" style="margin-top:16px">Continue to Payment (UPI, Cards, NetBanking, COD) ${ICON.arrow}</button>
+      </form>`;
     },
-    3: () => `
+    2: () => `
       <div class="panel">
-        <h3>💳 Payment method</h3>
-        <label class="option-card ${co.payment === 'razorpay' ? 'active' : ''}"><input type="radio" name="pay" value="razorpay" ${co.payment === 'razorpay' ? 'checked' : ''}><div class="oc-body"><b>Razorpay Checkout <span class="rzp-badge">RECOMMENDED</span></b><span>Pay with UPI QR, GPay, PhonePe, Cards, NetBanking &amp; Wallets</span></div>⚡</label>
-        <label class="option-card ${co.payment === 'upi' ? 'active' : ''}"><input type="radio" name="pay" value="upi" ${co.payment === 'upi' ? 'checked' : ''}><div class="oc-body"><b>UPI Direct (Instant · Zero Fee)</b><span>Scan Dynamic QR, Google Pay, PhonePe, Paytm, BHIM VPA</span></div>📱</label>
-        <label class="option-card ${co.payment === 'card' ? 'active' : ''}"><input type="radio" name="pay" value="card" ${co.payment === 'card' ? 'checked' : ''}><div class="oc-body"><b>Credit / Debit Card (3D Secure 2.0)</b><span>Visa, Mastercard, RuPay, Amex</span></div>💳</label>
-        <label class="option-card ${co.payment === 'netbanking' ? 'active' : ''}"><input type="radio" name="pay" value="netbanking" ${co.payment === 'netbanking' ? 'checked' : ''}><div class="oc-body"><b>NetBanking (All Indian Banks)</b><span>HDFC, ICICI, SBI, Axis, Kotak &amp; 40+ banks</span></div>🏦</label>
-        <label class="option-card ${co.payment === 'emi' ? 'active' : ''}"><input type="radio" name="pay" value="emi" ${co.payment === 'emi' ? 'checked' : ''}><div class="oc-body"><b>Bank EMI / No-Cost EMI</b><span>3 to 12 months easy installments (orders ₹3,000+)</span></div>📅</label>
-        <label class="option-card ${co.payment === 'cod' ? 'active' : ''}"><input type="radio" name="pay" value="cod" ${co.payment === 'cod' ? 'checked' : ''}><div class="oc-body"><b>Cash / UPI on Delivery</b><span>Pay at your doorstep when your order arrives</span></div>💵</label>
-        <form id="payForm" novalidate style="margin-top:18px">${payFields()}</form>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:10px 14px;border-radius:12px;background:var(--surface-2);margin-bottom:18px;font-size:.86rem">
+          <span>📍 Delivering to <b>${esc(co.address.name)}</b>, ${esc(co.address.line1)}, ${esc(co.address.city)} ${esc(co.address.pincode)} · <b>${co.shipping === 'express' ? 'Express' : 'Standard'} (${estDeliveryRange(co.shipping)})</b></span>
+          <a href="#" id="editAddr" style="color:var(--primary);font-weight:700">Change</a>
+        </div>
+        <h3>💳 Select a payment method</h3>
+        <div class="pay-quick-tabs" id="payTabs">
+          ${PAY_TABS.map(([id, ic, title, sub]) => `
+            <button type="button" class="pay-tab ${co.payment === id ? 'active' : ''}" data-paytab="${id}">
+              <span class="pt-ic">${ic}</span>
+              <div><b>${title}</b><span>${sub}</span></div>
+            </button>`).join('')}
+        </div>
+        <form id="payForm" novalidate style="margin-top:14px">${payFields()}</form>
       </div>`,
   };
 
@@ -1564,8 +1601,7 @@ async function renderCheckout() {
     $('#stepBody').innerHTML = steps[co.step]();
     $('#stepBody').firstElementChild.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 300, easing: 'ease-out' });
     if (co.step === 1) bindAddress();
-    if (co.step === 2) bindDelivery();
-    if (co.step === 3) bindPayment();
+    if (co.step === 2) bindPayment();
   }
 
   function bindAddress() {
@@ -1575,6 +1611,11 @@ async function renderCheckout() {
       if (!a) return;
       co.address = { ...co.address, ...a };
       show();
+    }));
+    $$('input[name=ship]', form).forEach((r) => r.addEventListener('change', () => {
+      co.shipping = r.value;
+      $$('.option-card', form).forEach((c) => c.classList.toggle('active', c.contains(r) && r.checked));
+      refreshSummary();
     }));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1589,7 +1630,8 @@ async function renderCheckout() {
       if (!/^[1-9]\d{5}$/.test(fd.pincode || '')) errs.pincode = 'Enter a valid 6-digit PIN code';
       ['name', 'phone', 'email', 'line1', 'city', 'state', 'pincode'].forEach((k) => fieldErr(form, k, errs[k]));
       if (Object.keys(errs).length) { form.querySelector('.invalid .input')?.focus(); return; }
-      const { save, ...addr } = fd;
+      const { save, ship, ...addr } = fd;
+      if (ship) co.shipping = ship;
       co.address = { ...co.address, ...addr };
       if (save) {
         store.set('address', { ...addr, email: undefined });
@@ -1606,20 +1648,11 @@ async function renderCheckout() {
     form.addEventListener('input', (e) => fieldErr(form, e.target.name, ''));
   }
 
-  function bindDelivery() {
-    $('#editAddr').addEventListener('click', (e) => { e.preventDefault(); co.step = 1; show(); });
-    $$('input[name=ship]').forEach((r) => r.addEventListener('change', () => {
-      co.shipping = r.value;
-      $$('.option-card').forEach((c) => c.classList.toggle('active', c.contains(r) && r.checked));
-      refreshSummary();
-    }));
-    $('#toPay').addEventListener('click', () => { co.step = 3; show(); });
-  }
-
   function bindPayment() {
-    $$('input[name=pay]').forEach((r) => r.addEventListener('change', () => {
-      co.payment = r.value;
-      $$('.option-card').forEach((c) => c.classList.toggle('active', c.contains(r)));
+    $('#editAddr')?.addEventListener('click', (e) => { e.preventDefault(); co.step = 1; show(); });
+    $$('[data-paytab]').forEach((b) => b.addEventListener('click', () => {
+      co.payment = b.dataset.paytab;
+      $$('[data-paytab]').forEach((x) => x.classList.toggle('active', x === b));
       $('#payForm').innerHTML = payFields();
       bindPayForm();
     }));
@@ -1808,7 +1841,7 @@ async function renderCheckout() {
 
   show();
   await refreshSummary();
-  if (co.step === 3) { $('#payForm').innerHTML = payFields(); bindPayForm(); }
+  if (co.step === 2) { $('#payForm').innerHTML = payFields(); bindPayForm(); }
 }
 
 // ---------- Order confirmation ----------
@@ -1842,29 +1875,47 @@ async function renderOrder({ parts, query, isCurrent }) {
   const o = await api('/orders/' + parts[1]);
   if (!isCurrent()) return;
   const isNew = query.get('new') === '1';
+  const stages = ['confirmed', 'packed', 'shipped', 'delivered'];
+  const stage = o.status === 'cancelled' ? -1 : Math.max(stages.indexOf(o.status), 0);
   $('#app').innerHTML = `
-  <div class="container success">
+  <div class="container success" style="max-width:720px">
     <div class="success-check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
-    <h1>${isNew ? 'Thank you for your order! 🎉' : 'Order details'}</h1>
-    <p class="muted">${isNew ? `We've sent a confirmation to <b>${esc(o.email)}</b>. We'll let you know when it ships.` : `Placed on ${fmtDate(o.createdAt)}`}</p>
+    <span class="chip" style="background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success);border:0;margin-bottom:10px">✔ Order ${esc(o.status.toUpperCase())} · Payment ${esc(o.payment.status.toUpperCase())}</span>
+    <h1>${isNew ? 'Order Confirmed! Thank you 🎉' : `Order #${esc(o.id)}`}</h1>
+    <p class="muted">${isNew ? `A confirmation receipt has been sent to <b>${esc(o.email)}</b>. Keep your Order ID <b>${esc(o.id)}</b> for instant tracking.` : `Placed on ${fmtDate(o.createdAt)}`}</p>
     <div class="order-meta">
-      <div><span>Order number</span><b>${esc(o.id)}</b></div>
-      <div><span>Estimated delivery</span><b>${fmtDate(o.estimatedDelivery, { weekday: 'short', day: 'numeric', month: 'short' })}</b></div>
-      <div><span>Payment (${esc(o.payment.status)})</span><b>${esc(fmtPayment(o.payment))}</b></div>
+      <div><span>Order number</span><b style="display:flex;align-items:center;justify-content:space-between;gap:6px">${esc(o.id)} <button type="button" class="link-btn" id="copyOrderId" style="font-size:.75rem;color:var(--primary)">Copy</button></b></div>
+      <div><span>Estimated delivery</span><b>${fmtDate(o.estimatedDelivery, { weekday: 'short', day: 'numeric', month: 'short' })} (${o.shippingMethod === 'express' ? 'Express' : 'Standard'})</b></div>
+      <div><span>Payment method</span><b>${esc(fmtPayment(o.payment))}</b></div>
     </div>
     <div class="panel" style="text-align:left">
+      ${o.status !== 'cancelled' ? `
+        <div style="margin-bottom:16px">
+          <span class="muted" style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em">Live Delivery Status</span>
+          <div class="tracker" style="margin-top:10px">${['Confirmed', 'Packed', 'Shipped', 'Delivered'].map((s, i) => `<div class="${i <= stage ? 'on' : ''}">${s}</div>`).join('')}</div>
+        </div>` : ''}
+      <h3 style="margin-bottom:10px">Items Ordered (${o.items.reduce((s, i) => s + i.qty, 0)})</h3>
       <div class="mini-items" style="max-height:none">${o.items.map((i) => `<div class="mini-item"><div class="thumb"><img src="${esc(i.image)}" alt=""><i>${i.qty}</i></div><span class="mi-title">${esc(i.title)}${i.size ? ` · Size ${esc(i.size)}` : ''}</span><b>${money(i.lineTotal)}</b></div>`).join('')}</div>
-      <div class="sum-row"><span>Subtotal</span><span>${money(o.subtotal)}</span></div>
-      ${o.discount ? `<div class="sum-row"><span>Discount (${esc(o.coupon)})</span><span class="green">− ${money(o.discount)}</span></div>` : ''}
-      <div class="sum-row"><span>Shipping</span><span>${o.shipping ? money(o.shipping) : 'FREE'}</span></div>
-      <div class="sum-row total"><span>Total paid</span><span>${money(o.total)}</span></div>
-      <p class="muted" style="font-size:.82rem;margin:10px 0 0">Shipping to <b>${esc(o.address.name)}</b>, ${esc(o.address.line1)}, ${esc(o.address.city)}, ${esc(o.address.state)} ${esc(o.address.pincode)}${o.payment.txnId ? ` · Ref: <b>${esc(o.payment.txnId)}</b>` : ''}</p>
+      <div class="sum-row"><span>Subtotal</span><b>${money(o.subtotal)}</b></div>
+      ${o.discount ? `<div class="sum-row"><span>Coupon discount (${esc(o.coupon)})</span><span class="green">− ${money(o.discount)}</span></div>` : ''}
+      <div class="sum-row"><span>Shipping charges (${esc(o.shippingMethod)})</span><b>${o.shipping ? money(o.shipping) : '<span class="green">FREE (₹0)</span>'}</b></div>
+      <div class="sum-row total"><span>Final Total</span><span>${money(o.total)}</span></div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:.83rem">
+        <div><span class="muted" style="display:block;font-size:.75rem">SHIPPING ADDRESS</span><b>${esc(o.address.name)}</b> (${esc(o.address.phone)})<br>${esc(o.address.line1)}${o.address.line2 ? ', ' + esc(o.address.line2) : ''}, ${esc(o.address.city)}, ${esc(o.address.state)} — ${esc(o.address.pincode)}</div>
+        <div><span class="muted" style="display:block;font-size:.75rem">PAYMENT &amp; GATEWAY REFERENCE</span><b>${esc(fmtPayment(o.payment))}</b><br>Status: <b style="text-transform:uppercase">${esc(o.payment.status)}</b>${o.payment.txnId ? `<br>Txn ID: <code>${esc(o.payment.txnId)}</code>` : ''}</div>
+      </div>
     </div>
     <div style="display:flex;gap:12px;justify-content:center;margin-top:24px;flex-wrap:wrap">
-      <a class="btn btn-primary" href="#/shop">Continue shopping</a>
-      ${state.user ? '<a class="btn" href="#/account">View my orders</a>' : '<a class="btn" href="#/account">Create an account</a>'}
+      <a class="btn btn-primary" href="#/shop">Continue shopping ${ICON.arrow}</a>
+      <button type="button" class="btn" id="printReceiptBtn">🖨️ Print / Save Receipt</button>
+      ${state.user ? '<a class="btn" href="#/account">View my orders</a>' : '<a class="btn" href="#/account">Create an account to save order</a>'}
     </div>
   </div>`;
+  $('#copyOrderId')?.addEventListener('click', () => {
+    navigator.clipboard?.writeText(o.id);
+    toast(`Order ID ${o.id} copied`);
+  });
+  $('#printReceiptBtn')?.addEventListener('click', () => window.print());
   if (isNew) { confetti(); history.replaceState(null, '', '#/order/' + o.id); }
 }
 
