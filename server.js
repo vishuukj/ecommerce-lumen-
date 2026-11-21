@@ -1110,6 +1110,7 @@ const MIME = {
 function serveStatic(req, res, url) {
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === '/admin' || pathname === '/admin/') pathname = '/admin.html';
+  if (pathname === '/runway' || pathname === '/runway/') pathname = '/runway.html';
   const isUpload = pathname.startsWith('/uploads/');
   const baseDir = isUpload ? UPLOAD_DIR : PUBLIC_DIR;
   const relPath = isUpload ? pathname.slice('/uploads/'.length) : pathname;
