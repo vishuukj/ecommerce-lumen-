@@ -597,7 +597,7 @@ async function renderOrders(el) {
           <div class="sum-row" style="font-size:.85rem"><span>Shipping (${esc(o.shippingMethod)})</span><span>${o.shipping ? money(o.shipping) : 'FREE'}</span></div>
           <div class="sum-row" style="font-weight:800"><span>Total</span><span>${money(o.total)}</span></div></div>
         <div><h4>Ship to</h4><p style="margin:0">${esc(o.address.name)}<br>${esc(o.address.line1)}${o.address.line2 ? '<br>' + esc(o.address.line2) : ''}<br>${esc(o.address.city)}, ${esc(o.address.state)} ${esc(o.address.pincode)}<br>📞 ${esc(o.address.phone)}<br>✉️ ${esc(o.email)}</p>
-          <h4 style="margin-top:14px">Payment</h4><p style="margin:0;text-transform:uppercase">${esc(o.payment.method)}${o.payment.last4 ? ' •••• ' + esc(o.payment.last4) : ''}${o.payment.upiId ? ' · ' + esc(o.payment.upiId) : ''}</p></div>
+          <h4 style="margin-top:14px">Payment</h4><p style="margin:0;text-transform:uppercase">${esc(o.payment.method)}${o.payment.last4 ? ' •••• ' + esc(o.payment.last4) : ''}${o.payment.upiId ? ' · ' + esc(o.payment.upiId) : ''}${o.payment.bankName ? ' · ' + esc(o.payment.bankName) : ''}${o.payment.emiMonths ? ` · ${o.payment.emiMonths}m EMI (${esc(o.payment.emiBank)})` : ''}${o.payment.txnId ? '<br><span class="muted" style="font-size:.76rem">Ref: ' + esc(o.payment.txnId) + '</span>' : ''}</p></div>
         <div><h4>Timeline</h4><ul class="timeline">${(o.statusHistory || []).map((h) => `<li>${esc(h.status)}<span>${fmtTime(h.at)}</span></li>`).join('')}</ul></div>
       </div></td></tr>` : ''}`).join('') : '<tr><td colspan="7" class="empty-row">No orders found.</td></tr>';
   };

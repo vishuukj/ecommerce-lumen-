@@ -146,18 +146,34 @@ if (!db.admin) {
   saveDb();
 }
 
-function createSession(userId) {
+const USER_SESSION_TTL = 14 * 24 * 60 * 60 * 1000; // 14 days
+
+function createSession(userId, req) {
   const token = crypto.randomBytes(32).toString('hex');
-  db.sessions[token] = { userId, created: Date.now() };
+  const now = Date.now();
+  db.sessions[token] = {
+    userId,
+    created: now,
+    expires: now + USER_SESSION_TTL,
+    ua: String(req?.headers['user-agent'] || '').slice(0, 120),
+    ip: req?.socket?.remoteAddress || '',
+  };
   saveDb();
   return token;
 }
 const bearer = (req) => /^Bearer (\w+)$/.exec(req.headers.authorization || '')?.[1] || null;
 function currentUser(req) {
-  const s = db.sessions[bearer(req)];
-  return s ? db.users.find((u) => u.id === s.userId) || null : null;
+  const token = bearer(req);
+  const s = token && db.sessions[token];
+  if (!s) return null;
+  if (s.expires && s.expires < Date.now()) {
+    delete db.sessions[token];
+    saveDb();
+    return null;
+  }
+  return db.users.find((u) => u.id === s.userId) || null;
 }
-const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, created: u.created });
+const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, phone: u.phone || '', addresses: u.addresses || [], created: u.created });
 
 function requireAdmin(req) {
   const token = bearer(req);
@@ -544,23 +560,69 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'POST' && p === '/api/auth/register') {
-    const { name, email, password } = await readBody(req);
-    if (!name || String(name).trim().length < 2) throw httpError(400, 'Please enter your name');
-    if (!isEmail(email)) throw httpError(400, 'Please enter a valid email');
+    const ip = 'u:' + req.socket.remoteAddress;
+    checkRateLimit(ip);
+    const { name, email, password, phone } = await readBody(req);
+    if (!name || String(name).trim().length < 2) throw httpError(400, 'Please enter your full name');
+    if (!isEmail(email)) throw httpError(400, 'Please enter a valid email address');
     if (!password || String(password).length < 6) throw httpError(400, 'Password must be at least 6 characters');
-    const em = String(email).toLowerCase();
+    const ph = phone ? String(phone).replace(/\D/g, '').slice(-10) : '';
+    if (ph && !/^[6-9]\d{9}$/.test(ph)) throw httpError(400, 'Enter a valid 10-digit mobile number');
+    const em = String(email).toLowerCase().trim();
     if (db.users.some((u) => u.email === em)) throw httpError(409, 'An account with this email already exists');
-    const user = { id: crypto.randomUUID(), name: String(name).trim(), email: em, password: hashPassword(String(password)), created: new Date().toISOString() };
+    const user = { id: crypto.randomUUID(), name: String(name).trim(), email: em, phone: ph, addresses: [], password: hashPassword(String(password)), created: new Date().toISOString() };
     db.users.push(user);
-    const token = createSession(user.id);
+    const token = createSession(user.id, req);
     return send(res, 201, { token, user: publicUser(user) });
   }
 
   if (method === 'POST' && p === '/api/auth/login') {
+    const ip = 'u:' + req.socket.remoteAddress;
+    checkRateLimit(ip);
     const { email, password } = await readBody(req);
-    const user = db.users.find((u) => u.email === String(email || '').toLowerCase());
-    if (!user || !verifyPassword(String(password || ''), user.password)) throw httpError(401, 'Incorrect email or password');
-    return send(res, 200, { token: createSession(user.id), user: publicUser(user) });
+    const user = db.users.find((u) => u.email === String(email || '').toLowerCase().trim());
+    if (!user || !verifyPassword(String(password || ''), user.password)) {
+      recordFailure(ip);
+      throw httpError(401, 'Incorrect email or password');
+    }
+    loginAttempts.delete(ip);
+    return send(res, 200, { token: createSession(user.id, req), user: publicUser(user) });
+  }
+
+  if (method === 'POST' && p === '/api/auth/otp/send') {
+    const { email } = await readBody(req);
+    if (!isEmail(email)) throw httpError(400, 'Enter a valid email address');
+    const em = String(email).toLowerCase().trim();
+    const code = String(crypto.randomInt(100000, 999999));
+    db.otps ??= {};
+    db.otps[em] = { code, expires: Date.now() + 5 * 60 * 1000, attempts: 0 };
+    saveDb();
+    return send(res, 200, { ok: true, demoOtp: code, expiresIn: 300 });
+  }
+
+  if (method === 'POST' && p === '/api/auth/otp/verify') {
+    const { email, otp, name } = await readBody(req);
+    const em = String(email || '').toLowerCase().trim();
+    const entry = db.otps?.[em];
+    if (!entry || entry.expires < Date.now()) throw httpError(400, 'OTP expired. Please request a new code.');
+    entry.attempts += 1;
+    if (entry.attempts > 5) { delete db.otps[em]; throw httpError(429, 'Too many failed OTP attempts. Request a new code.'); }
+    if (String(otp || '').trim() !== entry.code) throw httpError(401, 'Invalid 6-digit OTP code');
+    delete db.otps[em];
+    let user = db.users.find((u) => u.email === em);
+    if (!user) {
+      user = {
+        id: crypto.randomUUID(),
+        name: String(name || em.split('@')[0]).trim(),
+        email: em,
+        phone: '',
+        addresses: [],
+        password: hashPassword(crypto.randomBytes(16).toString('hex')),
+        created: new Date().toISOString(),
+      };
+      db.users.push(user);
+    }
+    return send(res, 200, { token: createSession(user.id, req), user: publicUser(user) });
   }
 
   if (method === 'POST' && p === '/api/auth/logout') {
@@ -569,10 +631,84 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true });
   }
 
+  if (method === 'POST' && p === '/api/auth/logout-all') {
+    const user = currentUser(req);
+    if (!user) throw httpError(401, 'Not signed in');
+    const keep = bearer(req);
+    for (const [tok, sess] of Object.entries(db.sessions)) {
+      if (sess.userId === user.id && tok !== keep) delete db.sessions[tok];
+    }
+    saveDb();
+    return send(res, 200, { ok: true });
+  }
+
   if (method === 'GET' && p === '/api/auth/me') {
     const user = currentUser(req);
     if (!user) throw httpError(401, 'Not signed in');
+    const activeSessions = Object.values(db.sessions).filter((s) => s.userId === user.id && (!s.expires || s.expires > Date.now())).length;
+    return send(res, 200, { user: publicUser(user), activeSessions });
+  }
+
+  if (method === 'PATCH' && p === '/api/auth/profile') {
+    const user = currentUser(req);
+    if (!user) throw httpError(401, 'Not signed in');
+    const { name, phone, addresses } = await readBody(req);
+    if (name !== undefined) {
+      if (String(name).trim().length < 2) throw httpError(400, 'Name must be at least 2 characters');
+      user.name = String(name).trim().slice(0, 80);
+    }
+    if (phone !== undefined) {
+      const ph = String(phone).replace(/\D/g, '').slice(-10);
+      if (ph && !/^[6-9]\d{9}$/.test(ph)) throw httpError(400, 'Enter a valid 10-digit mobile number');
+      user.phone = ph;
+    }
+    if (Array.isArray(addresses)) {
+      user.addresses = addresses.slice(0, 5).map((a) => ({
+        id: a.id || crypto.randomUUID(),
+        label: str(a.label || 'Home', 30),
+        name: str(a.name, 80),
+        phone: str(a.phone, 15),
+        line1: str(a.line1, 160),
+        line2: str(a.line2, 160),
+        city: str(a.city, 60),
+        state: str(a.state, 60),
+        pincode: str(a.pincode, 10),
+      }));
+    }
+    saveDb();
     return send(res, 200, { user: publicUser(user) });
+  }
+
+  if (method === 'POST' && p === '/api/auth/password') {
+    const user = currentUser(req);
+    if (!user) throw httpError(401, 'Not signed in');
+    const { current, next } = await readBody(req);
+    if (!verifyPassword(String(current || ''), user.password)) throw httpError(400, 'Current password is incorrect');
+    if (!next || String(next).length < 6) throw httpError(400, 'New password must be at least 6 characters');
+    user.password = hashPassword(String(next));
+    const keep = bearer(req);
+    for (const [tok, sess] of Object.entries(db.sessions)) {
+      if (sess.userId === user.id && tok !== keep) delete db.sessions[tok];
+    }
+    saveDb();
+    return send(res, 200, { ok: true });
+  }
+
+  if (method === 'POST' && p === '/api/payments/upi-verify') {
+    const { upiId } = await readBody(req);
+    const vpa = String(upiId || '').trim().toLowerCase();
+    const m2 = /^([\w.\-]{2,})@([a-zA-Z]{2,})$/.exec(vpa);
+    if (!m2) throw httpError(400, 'Enter a valid UPI ID (e.g. yourname@okicici)');
+    const PSP_BANKS = {
+      okaxis: 'Axis Bank (Google Pay)', okhdfcbank: 'HDFC Bank (Google Pay)', okicici: 'ICICI Bank (Google Pay)', oksbi: 'State Bank of India (Google Pay)',
+      ybl: 'Yes Bank (PhonePe)', ibl: 'ICICI Bank (PhonePe)', axl: 'Axis Bank (PhonePe)',
+      paytm: 'Paytm Payments Bank', ptyes: 'Yes Bank (Paytm)', ptaxis: 'Axis Bank (Paytm)',
+      apl: 'Amazon Pay', upi: 'NPCI BHIM UPI', icici: 'ICICI Bank', sbi: 'State Bank of India', hdfcbank: 'HDFC Bank',
+    };
+    const rawName = m2[1].replace(/[._\-]+/g, ' ').replace(/\d+/g, '').trim() || 'Verified Customer';
+    const holder = rawName.toUpperCase();
+    const bank = PSP_BANKS[m2[2]] || `${m2[2].toUpperCase()} PSP Bank`;
+    return send(res, 200, { verified: true, vpa, holder, bank });
   }
 
   if (method === 'POST' && p === '/api/orders') {
@@ -587,21 +723,61 @@ async function handleApi(req, res, url) {
     const email = user ? user.email : String(a.email || '').toLowerCase();
     if (!isEmail(email)) throw httpError(400, 'A valid email is required');
     const methodName = payment?.method;
-    if (!['card', 'upi', 'cod'].includes(methodName)) throw httpError(400, 'Choose a payment method');
+    if (!['card', 'upi', 'netbanking', 'emi', 'cod'].includes(methodName)) throw httpError(400, 'Choose a valid payment method');
 
     const quote = priceCart(items, coupon, shippingMethod);
     if (methodName === 'cod' && quote.total > 50000) throw httpError(400, 'Cash on Delivery is available for orders up to ₹50,000');
+    if (methodName === 'emi' && quote.total < 3000) throw httpError(400, 'Bank EMI is available on orders of ₹3,000 and above');
 
-    // Simulated payment processing - never store card numbers.
-    const paymentInfo = { method: methodName, status: methodName === 'cod' ? 'pending' : 'paid' };
+    // Simulated payment gateway processing - never store raw card numbers or PINs.
+    const txnId = 'TXN' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(3).toString('hex').toUpperCase();
+    const paymentInfo = { method: methodName, status: methodName === 'cod' ? 'pending' : 'paid', txnId, gateway: 'LumenPay 3DS2' };
+
     if (methodName === 'card') {
       const num = String(payment.cardNumber || '').replace(/\s/g, '');
       if (!/^\d{13,19}$/.test(num)) throw httpError(400, 'Invalid card number');
       paymentInfo.last4 = num.slice(-4);
+      paymentInfo.network = /^4/.test(num) ? 'VISA' : /^(5[1-5]|2[2-7])/.test(num) ? 'Mastercard' : /^(60|65|81|82|508)/.test(num) ? 'RuPay' : /^3[47]/.test(num) ? 'AMEX' : 'CARD';
+      paymentInfo.authMode = '3D Secure 2.0 OTP Verified';
     }
     if (methodName === 'upi') {
-      if (!/^[\w.\-]{2,}@[a-zA-Z]{2,}$/.test(String(payment.upiId || ''))) throw httpError(400, 'Invalid UPI ID');
-      paymentInfo.upiId = payment.upiId;
+      const mode = payment.upiMode || 'vpa';
+      if (mode === 'qr' || mode === 'intent') {
+        paymentInfo.upiMode = mode;
+        paymentInfo.upiApp = str(payment.upiApp || 'UPI QR Scan', 40);
+        paymentInfo.upiId = str(payment.upiId || 'qr-verified@upi', 60);
+      } else {
+        if (!/^[\w.\-]{2,}@[a-zA-Z]{2,}$/.test(String(payment.upiId || ''))) throw httpError(400, 'Invalid UPI ID');
+        paymentInfo.upiMode = 'vpa';
+        paymentInfo.upiId = String(payment.upiId).toLowerCase();
+      }
+      paymentInfo.utr = String(Date.now()).slice(-12);
+    }
+    if (methodName === 'netbanking') {
+      const BANKS = {
+        HDFC: 'HDFC Bank', ICICI: 'ICICI Bank', SBI: 'State Bank of India', AXIS: 'Axis Bank',
+        KOTAK: 'Kotak Mahindra Bank', PNB: 'Punjab National Bank', BOB: 'Bank of Baroda',
+        INDUS: 'IndusInd Bank', YES: 'Yes Bank', IDFC: 'IDFC FIRST Bank',
+      };
+      const code = String(payment.bankCode || '').toUpperCase();
+      if (!BANKS[code]) throw httpError(400, 'Please select a valid bank for NetBanking');
+      paymentInfo.bankCode = code;
+      paymentInfo.bankName = BANKS[code];
+      paymentInfo.bankRef = code + crypto.randomBytes(4).toString('hex').toUpperCase();
+    }
+    if (methodName === 'emi') {
+      const bank = str(payment.emiBank || 'HDFC Bank', 50);
+      const months = Number(payment.emiMonths) || 3;
+      if (![3, 6, 9, 12].includes(months)) throw httpError(400, 'Invalid EMI tenure');
+      const num = String(payment.cardNumber || '').replace(/\s/g, '');
+      if (!/^\d{13,19}$/.test(num)) throw httpError(400, 'Enter a valid credit card number for EMI');
+      const rate = months <= 6 ? 0 : 0.14;
+      const monthly = rate === 0 ? Math.ceil(quote.total / months) : Math.ceil((quote.total * (1 + (rate * months) / 12)) / months);
+      paymentInfo.emiBank = bank;
+      paymentInfo.emiMonths = months;
+      paymentInfo.emiMonthly = monthly;
+      paymentInfo.noCost = rate === 0;
+      paymentInfo.last4 = num.slice(-4);
     }
 
     for (const l of quote.lines) findProduct(l.id).stock -= l.qty;

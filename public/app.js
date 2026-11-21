@@ -1042,13 +1042,156 @@ const cardBrand = (n) => /^4/.test(n) ? 'VISA' : /^(5[1-5]|2[2-7])/.test(n) ? 'M
 
 const STATES = ['Andhra Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Delhi', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Odisha', 'Punjab', 'Rajasthan', 'Tamil Nadu', 'Telangana', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'];
 
+const TOP_BANKS = [
+  { code: 'HDFC', name: 'HDFC Bank', color: '#004c8f' },
+  { code: 'ICICI', name: 'ICICI Bank', color: '#f37021' },
+  { code: 'SBI', name: 'State Bank of India', color: '#1d4ed8' },
+  { code: 'AXIS', name: 'Axis Bank', color: '#97144d' },
+  { code: 'KOTAK', name: 'Kotak Mahindra', color: '#ed1c24' },
+  { code: 'IDFC', name: 'IDFC FIRST Bank', color: '#9b1c1c' },
+];
+const ALL_BANKS = [
+  ...TOP_BANKS,
+  { code: 'PNB', name: 'Punjab National Bank', color: '#a20c3b' },
+  { code: 'BOB', name: 'Bank of Baroda', color: '#f26522' },
+  { code: 'INDUS', name: 'IndusInd Bank', color: '#832625' },
+  { code: 'YES', name: 'Yes Bank', color: '#00518f' },
+];
+const UPI_APPS = [
+  { id: 'Google Pay', short: 'GPay', handle: '@okicici', bg: 'linear-gradient(135deg,#4285f4,#34a853)' },
+  { id: 'PhonePe', short: 'Pe', handle: '@ybl', bg: 'linear-gradient(135deg,#5f259f,#7c3aed)' },
+  { id: 'Paytm', short: 'Pay', handle: '@paytm', bg: 'linear-gradient(135deg,#002970,#00baf2)' },
+  { id: 'BHIM UPI', short: 'BHIM', handle: '@upi', bg: 'linear-gradient(135deg,#ea580c,#16a34a)' },
+];
+
+// Deterministic SVG QR Matrix generator for dynamic UPI intent URI
+function upiQrSvg(text) {
+  const N = 21;
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  const inFinder = (r, c) => (r < 7 && c < 7) || (r < 7 && c >= N - 7) || (r >= N - 7 && c < 7);
+  const finderBit = (r, c) => r === 0 || r === 6 || c === 0 || c === 6 || (r >= 2 && r <= 4 && c >= 2 && c <= 4);
+  let rects = '';
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      let on = false;
+      if (inFinder(r, c)) {
+        const lr = r >= N - 7 ? r - (N - 7) : r;
+        const lc = c >= N - 7 ? c - (N - 7) : c;
+        on = finderBit(lr, lc);
+      } else if (r === 6 || c === 6) {
+        on = (r + c) % 2 === 0;
+      } else {
+        h ^= (r * 31 + c * 17) & 0xff;
+        h = Math.imul(h, 16777619);
+        on = (h & 3) !== 0;
+      }
+      if (on) rects += `<rect x="${c}" y="${r}" width="1" height="1"/>`;
+    }
+  }
+  return `<svg viewBox="0 0 ${N} ${N}" shape-rendering="crispEdges" fill="#0f1222">${rects}</svg>`;
+}
+
+// Simulated 3DS 2.0 / NetBanking / UPI Collect gateway authorization modal
+function authorizeGatewayModal({ title, subtitle, badge, amount, mode = 'otp' }) {
+  return new Promise((resolve) => {
+    const demoOtp = String(100000 + Math.floor(Math.random() * 900000));
+    openModal(`
+      <div class="gateway-box">
+        <div class="gateway-head">
+          <div><b style="font-size:1.05rem">${esc(title)}</b><div class="muted" style="font-size:.78rem">${esc(subtitle)}</div></div>
+          <span class="pill-s blue" style="padding:4px 10px;border-radius:999px;background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary);font-weight:800;font-size:.75rem">${esc(badge)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:12px 14px;border-radius:12px;background:var(--surface-2);margin-bottom:16px;font-size:.9rem">
+          <span>Merchant: <b>Lumen Retail Pvt. Ltd.</b></span>
+          <b>${money(amount)}</b>
+        </div>
+        ${mode === 'netbanking' ? `
+          <form id="gwForm" class="form-stack">
+            <div class="field"><label>Customer ID / NetBanking User ID</label><input class="input" name="uid" value="DEMOUSER882" required></div>
+            <div class="field"><label>Transaction Password / MPIN</label><input class="input" type="password" name="mpin" value="123456" required></div>
+            <p class="muted" style="font-size:.78rem;margin:0">🔒 256-bit TLS bank portal simulation. Pre-filled with demo credentials — click Authorize to complete.</p>
+            <div class="grid-2" style="margin-top:6px">
+              <button type="button" class="btn" id="gwCancel">Cancel</button>
+              <button type="submit" class="btn btn-primary" id="gwSubmit">Authorize ${money(amount)}</button>
+            </div>
+          </form>
+        ` : mode === 'upi' ? `
+          <div style="text-align:center;padding:8px 0 14px">
+            <div style="font-size:2.4rem;margin-bottom:6px">📲</div>
+            <b>Approve collect request in your UPI app</b>
+            <p class="muted" style="font-size:.85rem;margin:6px 0 14px">We sent a collect request for <b>${money(amount)}</b>. Approve it on your phone or click below to simulate instant NPCI callback.</p>
+            <div class="grid-2">
+              <button type="button" class="btn" id="gwCancel">Cancel</button>
+              <button type="button" class="btn btn-primary" id="gwApprove">Simulate UPI Approval ✓</button>
+            </div>
+          </div>
+        ` : `
+          <form id="gwForm">
+            <p style="font-size:.88rem;margin:0 0 8px;text-align:center">Enter the 6-digit 3D Secure OTP sent to your registered mobile/email</p>
+            <div style="text-align:center;margin-bottom:8px"><span class="chip" style="font-size:.78rem;background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success);border:0">Demo OTP: <b id="demoOtpCode">${demoOtp}</b> <button type="button" class="link-btn" id="fillOtp" style="margin-left:6px;color:var(--primary);font-weight:800">Auto-fill</button></span></div>
+            <div class="otp-inputs" id="otpInputs">${[0, 1, 2, 3, 4, 5].map((i) => `<input type="text" inputmode="numeric" maxlength="1" data-idx="${i}" aria-label="OTP digit ${i + 1}">`).join('')}</div>
+            <div class="err" id="gwErr" style="color:var(--danger);font-size:.8rem;text-align:center;min-height:1.2em;margin-bottom:8px"></div>
+            <div class="grid-2">
+              <button type="button" class="btn" id="gwCancel">Cancel</button>
+              <button type="submit" class="btn btn-primary" id="gwSubmit">Verify & Pay ${money(amount)}</button>
+            </div>
+          </form>
+        `}
+      </div>`);
+
+    const finish = (ok) => { closeModal(); resolve(ok); };
+    $('#gwCancel')?.addEventListener('click', () => finish(false));
+    $('#gwApprove')?.addEventListener('click', () => finish(true));
+
+    const boxes = $$('#otpInputs input');
+    if (boxes.length) {
+      boxes[0].focus();
+      boxes.forEach((inp, i) => {
+        inp.addEventListener('input', () => {
+          inp.value = inp.value.replace(/\D/g, '').slice(-1);
+          if (inp.value && boxes[i + 1]) boxes[i + 1].focus();
+        });
+        inp.addEventListener('keydown', (e) => {
+          if (e.key === 'Backspace' && !inp.value && boxes[i - 1]) boxes[i - 1].focus();
+        });
+      });
+      $('#fillOtp')?.addEventListener('click', () => {
+        demoOtp.split('').forEach((ch, i) => { if (boxes[i]) boxes[i].value = ch; });
+      });
+    }
+
+    $('#gwForm')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (boxes.length) {
+        const entered = boxes.map((b) => b.value).join('');
+        if (entered.length !== 6) { $('#gwErr').textContent = 'Please enter all 6 digits (or click Auto-fill)'; return; }
+      }
+      finish(true);
+    });
+  });
+}
+
 async function renderCheckout() {
   setTitle('Checkout');
   const app = $('#app');
   if (!state.cart.length) { location.hash = '#/cart'; return; }
 
   const saved = store.get('address', {});
-  const co = { step: 1, address: { email: state.user?.email || '', ...saved }, shipping: 'standard', payment: 'card' };
+  const userAddrs = state.user?.addresses || [];
+  const defaultAddr = userAddrs[0] || saved;
+  const co = {
+    step: 1,
+    address: { name: state.user?.name || '', phone: state.user?.phone || '', email: state.user?.email || '', ...defaultAddr },
+    shipping: 'standard',
+    payment: 'upi',
+    upiMode: 'qr',
+    upiApp: 'Google Pay',
+    upiVerified: null,
+    bankCode: 'HDFC',
+    emiBank: 'HDFC Bank',
+    emiMonths: 3,
+  };
 
   app.innerHTML = `
   <div class="container page-head"><div class="breadcrumbs"><a href="#/">Home</a> / <a href="#/cart">Cart</a> / <span>Checkout</span></div><h1>Checkout</h1></div>
@@ -1076,7 +1219,8 @@ async function renderCheckout() {
     const f = form.querySelector(`[name="${name}"]`)?.closest('.field');
     if (!f) return;
     f.classList.toggle('invalid', !!msg);
-    f.querySelector('.err').textContent = msg || '';
+    const er = f.querySelector('.err');
+    if (er) er.textContent = msg || '';
   };
 
   const field = (name, label, attrs = '', cls = '') => `
@@ -1086,6 +1230,11 @@ async function renderCheckout() {
     1: () => `
       <form class="panel" id="addrForm" novalidate>
         <h3>📍 Shipping address</h3>
+        ${userAddrs.length ? `
+          <div style="margin-bottom:14px">
+            <span class="muted" style="font-size:.82rem;display:block;margin-bottom:8px">Saved addresses:</span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">${userAddrs.map((a, idx) => `<button type="button" class="chip" data-pickaddr="${idx}">🏠 ${esc(a.label || 'Address')}: ${esc(a.city)} ${esc(a.pincode)}</button>`).join('')}</div>
+          </div>` : ''}
         <div class="grid-2">
           ${field('name', 'Full name', 'autocomplete="name" required')}
           ${field('phone', 'Phone number', 'inputmode="tel" autocomplete="tel" maxlength="10" placeholder="10-digit mobile" required')}
@@ -1113,15 +1262,62 @@ async function renderCheckout() {
     },
     3: () => `
       <div class="panel">
-        <h3>💳 Payment</h3>
-        <label class="option-card ${co.payment === 'card' ? 'active' : ''}"><input type="radio" name="pay" value="card" ${co.payment === 'card' ? 'checked' : ''}><div class="oc-body"><b>Credit / Debit card</b><span>Visa, Mastercard, RuPay, Amex</span></div>💳</label>
-        <label class="option-card ${co.payment === 'upi' ? 'active' : ''}"><input type="radio" name="pay" value="upi" ${co.payment === 'upi' ? 'checked' : ''}><div class="oc-body"><b>UPI</b><span>GPay, PhonePe, Paytm & more</span></div>📱</label>
-        <label class="option-card ${co.payment === 'cod' ? 'active' : ''}"><input type="radio" name="pay" value="cod" ${co.payment === 'cod' ? 'checked' : ''}><div class="oc-body"><b>Cash on delivery</b><span>Pay when your order arrives</span></div>💵</label>
+        <h3>💳 Payment method</h3>
+        <label class="option-card ${co.payment === 'upi' ? 'active' : ''}"><input type="radio" name="pay" value="upi" ${co.payment === 'upi' ? 'checked' : ''}><div class="oc-body"><b>UPI (Instant · Zero Fee)</b><span>Scan Dynamic QR, Google Pay, PhonePe, Paytm, BHIM VPA</span></div>📱</label>
+        <label class="option-card ${co.payment === 'card' ? 'active' : ''}"><input type="radio" name="pay" value="card" ${co.payment === 'card' ? 'checked' : ''}><div class="oc-body"><b>Credit / Debit Card (3D Secure 2.0)</b><span>Visa, Mastercard, RuPay, Amex</span></div>💳</label>
+        <label class="option-card ${co.payment === 'netbanking' ? 'active' : ''}"><input type="radio" name="pay" value="netbanking" ${co.payment === 'netbanking' ? 'checked' : ''}><div class="oc-body"><b>NetBanking (All Indian Banks)</b><span>HDFC, ICICI, SBI, Axis, Kotak & 40+ banks</span></div>🏦</label>
+        <label class="option-card ${co.payment === 'emi' ? 'active' : ''}"><input type="radio" name="pay" value="emi" ${co.payment === 'emi' ? 'checked' : ''}><div class="oc-body"><b>Bank EMI / No-Cost EMI</b><span>3 to 12 months easy installments (orders ₹3,000+)</span></div>📅</label>
+        <label class="option-card ${co.payment === 'cod' ? 'active' : ''}"><input type="radio" name="pay" value="cod" ${co.payment === 'cod' ? 'checked' : ''}><div class="oc-body"><b>Cash / UPI on Delivery</b><span>Pay at your doorstep when your order arrives</span></div>💵</label>
         <form id="payForm" novalidate style="margin-top:18px">${payFields()}</form>
       </div>`,
   };
 
   function payFields() {
+    const totalAmt = quote ? quote.total : cartSubtotal();
+    if (co.payment === 'upi') {
+      const upiUri = `upi://pay?pa=lumenstore@icici&pn=Lumen%20Retail&am=${totalAmt}&cu=INR`;
+      return `
+      <div class="upi-tabs">
+        <button type="button" class="${co.upiMode === 'qr' ? 'active' : ''}" data-upimode="qr">📷 Scan UPI QR</button>
+        <button type="button" class="${co.upiMode === 'intent' ? 'active' : ''}" data-upimode="intent">⚡ UPI App</button>
+        <button type="button" class="${co.upiMode === 'vpa' ? 'active' : ''}" data-upimode="vpa">🆔 Enter UPI ID</button>
+      </div>
+      ${co.upiMode === 'qr' ? `
+        <div class="qr-card">
+          <div class="qr-box">${upiQrSvg(upiUri)}</div>
+          <div>
+            <span class="chip" style="font-size:.74rem;margin-bottom:8px">NPCI BHIM · Dynamic QR</span>
+            <b style="display:block;font-size:1.02rem">Scan with any UPI app to pay ${money(totalAmt)}</b>
+            <p class="muted" style="font-size:.82rem;margin:6px 0 10px">Works with Google Pay, PhonePe, Paytm, BHIM, Amazon Pay and all bank apps.</p>
+            <div style="font-size:.78rem;color:var(--muted)">Merchant VPA: <b>lumenstore@icici</b></div>
+          </div>
+        </div>
+      ` : co.upiMode === 'intent' ? `
+        <p class="muted" style="font-size:.85rem;margin:0 0 6px">Select your preferred UPI app:</p>
+        <div class="upi-apps">
+          ${UPI_APPS.map((a) => `
+            <button type="button" class="upi-app ${co.upiApp === a.id ? 'active' : ''}" data-upiapp="${esc(a.id)}">
+              <span class="app-ic" style="background:${a.bg}">${a.short}</span>
+              <span>${esc(a.id)}</span>
+            </button>`).join('')}
+        </div>
+      ` : `
+        <div class="vpa-row">
+          <div class="field">
+            <label>Virtual Payment Address (UPI ID)</label>
+            <input class="input" name="upiId" id="upiIdInput" placeholder="username@okicici" value="${esc(co.upiVerified?.vpa || '')}">
+            <span class="err"></span>
+          </div>
+          <button type="button" class="btn" id="verifyVpaBtn" style="margin-top:26px;height:46px">Verify VPA</button>
+        </div>
+        <div class="vpa-chips">
+          ${['@okicici', '@okhdfcbank', '@oksbi', '@ybl', '@paytm', '@upi'].map((h) => `<button type="button" data-vpahandle="${h}">${h}</button>`).join('')}
+        </div>
+        <div id="vpaStatus">${co.upiVerified ? `<div class="vpa-verified">✔ Verified Account: <b>${esc(co.upiVerified.holder)}</b> · <span class="muted">${esc(co.upiVerified.bank)}</span></div>` : ''}</div>
+      `}
+      ${placeBtn(co.upiMode === 'qr' ? 'I Have Scanned & Paid' : `Pay via UPI`)}`;
+    }
+
     if (co.payment === 'card') return `
       <div class="card-preview"><span class="brand-ic" id="cpBrand"></span><div class="chip-ic"></div><div class="cp-num" id="cpNum">•••• •••• •••• ••••</div>
         <div class="cp-row"><div>Card holder<b id="cpName">YOUR NAME</b></div><div>Expires<b id="cpExp">MM/YY</b></div></div></div>
@@ -1131,15 +1327,62 @@ async function renderCheckout() {
         <div class="field"><label>Expiry</label><input class="input" name="exp" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/YY" maxlength="5"><span class="err"></span></div>
         <div class="field"><label>CVV</label><input class="input" name="cvv" type="password" inputmode="numeric" autocomplete="cc-csc" placeholder="•••" maxlength="4"><span class="err"></span></div>
       </div>
-      <p class="muted" style="font-size:.8rem">🧪 Demo mode — use test card <b>4242 4242 4242 4242</b>, any future expiry, any CVV. No real payment is made.</p>
-      ${placeBtn()}`;
-    if (co.payment === 'upi') return `
-      <div class="field"><label>UPI ID</label><input class="input" name="upiId" placeholder="yourname@okbank"><span class="err"></span></div>
-      <p class="muted" style="font-size:.8rem">A payment request will be sent to your UPI app (simulated in demo mode).</p>
-      ${placeBtn()}`;
-    return `<p class="muted">Pay with cash or UPI when your order is delivered. Available for orders up to ₹50,000.</p>${placeBtn()}`;
+      <p class="muted" style="font-size:.8rem">🔒 Protected by 3D Secure 2.0 OTP verification. Test card: <b>4242 4242 4242 4242</b>, any future expiry, any CVV.</p>
+      ${placeBtn('Proceed to 3D Secure OTP')}`;
+
+    if (co.payment === 'netbanking') return `
+      <p class="muted" style="font-size:.85rem;margin:0 0 8px">Popular banks:</p>
+      <div class="bank-grid">
+        ${TOP_BANKS.map((b) => `
+          <button type="button" class="bank-tile ${co.bankCode === b.code ? 'active' : ''}" data-bank="${b.code}">
+            <span class="bank-logo" style="background:${b.color}">${b.code}</span>
+            <span>${esc(b.name)}</span>
+          </button>`).join('')}
+      </div>
+      <div class="field">
+        <label for="bankSelect">Or choose from all banks</label>
+        <select class="input" id="bankSelect" name="bankCode">
+          ${ALL_BANKS.map((b) => `<option value="${b.code}" ${co.bankCode === b.code ? 'selected' : ''}>${esc(b.name)} NetBanking</option>`).join('')}
+        </select>
+      </div>
+      <p class="muted" style="font-size:.8rem;margin:10px 0 4px">You will authorize the payment in a secure simulated bank login window.</p>
+      ${placeBtn(`Continue to ${ALL_BANKS.find((b) => b.code === co.bankCode)?.name || 'Bank'} Portal`)}`;
+
+    if (co.payment === 'emi') {
+      if (totalAmt < 3000) {
+        return `<div class="panel" style="background:var(--surface-2);text-align:center"><p style="margin:0">Bank EMI is available on orders of <b>₹3,000</b> or above. Your current order total is <b>${money(totalAmt)}</b>.</p></div>`;
+      }
+      const plans = [3, 6, 9, 12].map((m) => {
+        const rate = m <= 6 ? 0 : 0.14;
+        const monthly = rate === 0 ? Math.ceil(totalAmt / m) : Math.ceil((totalAmt * (1 + (rate * m) / 12)) / m);
+        return { m, rate, monthly, total: monthly * m };
+      });
+      return `
+        <div class="field">
+          <label>Issuing Bank</label>
+          <select class="input" name="emiBank" id="emiBankSel">
+            ${TOP_BANKS.map((b) => `<option ${co.emiBank === b.name ? 'selected' : ''}>${esc(b.name)} Credit Card EMI</option>`).join('')}
+          </select>
+        </div>
+        <div class="emi-plans">
+          ${plans.map((p) => `
+            <div class="emi-plan ${co.emiMonths === p.m ? 'active' : ''}" data-emimonths="${p.m}">
+              <b>${money(p.monthly)} / mo × ${p.m}m ${p.rate === 0 ? '<span class="nocost">NO COST</span>' : ''}</b>
+              <span>${p.rate === 0 ? '0% interest p.a.' : '14% p.a.'} · Total ${money(p.total)}</span>
+            </div>`).join('')}
+        </div>
+        <div class="grid-2">
+          <div class="field span-2"><label>Credit card number</label><input class="input" name="cardNumber" inputmode="numeric" placeholder="4242 4242 4242 4242" maxlength="23"><span class="err"></span></div>
+          <div class="field"><label>Expiry (MM/YY)</label><input class="input" name="exp" inputmode="numeric" placeholder="08/29" maxlength="5"><span class="err"></span></div>
+          <div class="field"><label>CVV</label><input class="input" name="cvv" type="password" inputmode="numeric" placeholder="•••" maxlength="4"><span class="err"></span></div>
+        </div>
+        ${placeBtn(`Pay ${money(plans.find((x) => x.m === co.emiMonths)?.monthly || 0)}/mo with EMI`)}`;
+    }
+
+    return `<p class="muted">Pay with cash or UPI QR at your doorstep when your order is delivered. Available for orders up to ₹50,000.</p>${placeBtn('Place COD Order')}`;
   }
-  const placeBtn = () => `<button class="btn btn-primary btn-block" id="placeBtn" style="height:54px;margin-top:10px">${ICON.lock} Place order${quote ? ' · ' + money(quote.total) : ''}</button>`;
+
+  const placeBtn = (label = 'Place order') => `<button class="btn btn-primary btn-block" id="placeBtn" style="height:54px;margin-top:10px">${ICON.lock} ${esc(label)}${quote ? ' · ' + money(quote.total) : ''}</button>`;
 
   function show() {
     paintSteps();
@@ -1152,7 +1395,13 @@ async function renderCheckout() {
 
   function bindAddress() {
     const form = $('#addrForm');
-    form.addEventListener('submit', (e) => {
+    $$('[data-pickaddr]', form).forEach((b) => b.addEventListener('click', () => {
+      const a = userAddrs[Number(b.dataset.pickaddr)];
+      if (!a) return;
+      co.address = { ...co.address, ...a };
+      show();
+    }));
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = Object.fromEntries(new FormData(form));
       const errs = {};
@@ -1167,7 +1416,16 @@ async function renderCheckout() {
       if (Object.keys(errs).length) { form.querySelector('.invalid .input')?.focus(); return; }
       const { save, ...addr } = fd;
       co.address = { ...co.address, ...addr };
-      if (save) store.set('address', { ...addr, email: undefined });
+      if (save) {
+        store.set('address', { ...addr, email: undefined });
+        if (state.user) {
+          const exists = (state.user.addresses || []).some((x) => x.line1 === addr.line1 && x.pincode === addr.pincode);
+          if (!exists) {
+            const nextAddrs = [{ id: String(Date.now()), label: 'Saved', ...addr }, ...(state.user.addresses || [])].slice(0, 5);
+            api('/auth/profile', { method: 'PATCH', body: { addresses: nextAddrs } }).then(({ user }) => setAuth(state.token, user)).catch(() => {});
+          }
+        }
+      }
       co.step = 2; show();
     });
     form.addEventListener('input', (e) => fieldErr(form, e.target.name, ''));
@@ -1195,28 +1453,89 @@ async function renderCheckout() {
 
   function bindPayForm() {
     const form = $('#payForm');
+
+    // UPI sub-tabs, apps & VPA verification
+    $$('[data-upimode]', form).forEach((b) => b.addEventListener('click', () => {
+      co.upiMode = b.dataset.upimode;
+      form.innerHTML = payFields();
+      bindPayForm();
+    }));
+    $$('[data-upiapp]', form).forEach((b) => b.addEventListener('click', () => {
+      co.upiApp = b.dataset.upiapp;
+      $$('[data-upiapp]', form).forEach((x) => x.classList.toggle('active', x === b));
+    }));
+    $$('[data-vpahandle]', form).forEach((b) => b.addEventListener('click', () => {
+      const inp = $('#upiIdInput', form);
+      if (!inp) return;
+      const base = inp.value.split('@')[0] || (state.user?.email?.split('@')[0] || 'rahul');
+      inp.value = base + b.dataset.vpahandle;
+      $('#verifyVpaBtn', form)?.click();
+    }));
+    $('#verifyVpaBtn', form)?.addEventListener('click', async () => {
+      const inp = $('#upiIdInput', form);
+      const btn = $('#verifyVpaBtn', form);
+      fieldErr(form, 'upiId', '');
+      btn.disabled = true; btn.textContent = 'Verifying…';
+      try {
+        const res = await api('/payments/upi-verify', { method: 'POST', body: { upiId: inp.value } });
+        co.upiVerified = res;
+        $('#vpaStatus', form).innerHTML = `<div class="vpa-verified">✔ Verified Account: <b>${esc(res.holder)}</b> · <span class="muted">${esc(res.bank)}</span></div>`;
+      } catch (err) {
+        co.upiVerified = null;
+        $('#vpaStatus', form).innerHTML = '';
+        fieldErr(form, 'upiId', err.message);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Verify VPA';
+      }
+    });
+
+    // NetBanking tiles & select
+    $$('[data-bank]', form).forEach((b) => b.addEventListener('click', () => {
+      co.bankCode = b.dataset.bank;
+      form.innerHTML = payFields();
+      bindPayForm();
+    }));
+    $('#bankSelect', form)?.addEventListener('change', (e) => {
+      co.bankCode = e.target.value;
+      form.innerHTML = payFields();
+      bindPayForm();
+    });
+
+    // EMI plan cards & bank select
+    $$('[data-emimonths]', form).forEach((b) => b.addEventListener('click', () => {
+      co.emiMonths = Number(b.dataset.emimonths);
+      form.innerHTML = payFields();
+      bindPayForm();
+    }));
+    $('#emiBankSel', form)?.addEventListener('change', (e) => { co.emiBank = e.target.value; });
+
+    // Card input formatting
     const num = form.querySelector('[name=cardNumber]');
     if (num) {
       num.addEventListener('input', () => {
         const d = num.value.replace(/\D/g, '').slice(0, 19);
         num.value = d.replace(/(.{4})/g, '$1 ').trim();
-        $('#cpNum').textContent = (d.padEnd(16, '•').match(/.{1,4}/g) || []).join(' ');
-        $('#cpBrand').textContent = cardBrand(d);
+        if ($('#cpNum')) $('#cpNum').textContent = (d.padEnd(16, '•').match(/.{1,4}/g) || []).join(' ');
+        if ($('#cpBrand')) $('#cpBrand').textContent = cardBrand(d);
       });
-      form.querySelector('[name=cardName]').addEventListener('input', (e) => { $('#cpName').textContent = e.target.value.toUpperCase() || 'YOUR NAME'; });
+      form.querySelector('[name=cardName]')?.addEventListener('input', (e) => { if ($('#cpName')) $('#cpName').textContent = e.target.value.toUpperCase() || 'YOUR NAME'; });
       const exp = form.querySelector('[name=exp]');
-      exp.addEventListener('input', () => {
+      exp?.addEventListener('input', () => {
         let d = exp.value.replace(/\D/g, '').slice(0, 4);
         if (d.length >= 3) d = d.slice(0, 2) + '/' + d.slice(2);
-        exp.value = d; $('#cpExp').textContent = d || 'MM/YY';
+        exp.value = d;
+        if ($('#cpExp')) $('#cpExp').textContent = d || 'MM/YY';
       });
     }
+
     form.addEventListener('input', (e) => fieldErr(form, e.target.name, ''));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = Object.fromEntries(new FormData(form));
       const payment = { method: co.payment };
       const errs = {};
+      const totalAmt = quote ? quote.total : cartSubtotal();
+
       if (co.payment === 'card') {
         const n = (fd.cardNumber || '').replace(/\s/g, '');
         if (!/^\d{13,19}$/.test(n) || !luhn(n)) errs.cardNumber = 'Enter a valid card number';
@@ -1227,17 +1546,50 @@ async function renderCheckout() {
         if (!/^\d{3,4}$/.test(fd.cvv || '')) errs.cvv = 'Invalid CVV';
         payment.cardNumber = n;
       } else if (co.payment === 'upi') {
-        if (!/^[\w.\-]{2,}@[a-zA-Z]{2,}$/.test(fd.upiId || '')) errs.upiId = 'Enter a valid UPI ID (e.g. name@okbank)';
-        payment.upiId = fd.upiId;
+        payment.upiMode = co.upiMode;
+        if (co.upiMode === 'vpa') {
+          const vpa = (fd.upiId || '').trim();
+          if (!/^[\w.\-]{2,}@[a-zA-Z]{2,}$/.test(vpa)) errs.upiId = 'Enter a valid UPI ID (e.g. name@okicici)';
+          payment.upiId = vpa;
+        } else {
+          payment.upiApp = co.upiMode === 'intent' ? co.upiApp : 'UPI QR Scan';
+          payment.upiId = co.upiMode === 'intent' ? `intent@${co.upiApp.toLowerCase().replace(/\s+/g, '')}` : 'qr-scan@upi';
+        }
+      } else if (co.payment === 'netbanking') {
+        payment.bankCode = co.bankCode;
+      } else if (co.payment === 'emi') {
+        const n = (fd.cardNumber || '').replace(/\s/g, '');
+        if (!/^\d{13,19}$/.test(n) || !luhn(n)) errs.cardNumber = 'Enter a valid credit card number';
+        const m = /^(\d{2})\/(\d{2})$/.exec(fd.exp || '');
+        const expOk = m && Number(m[1]) >= 1 && Number(m[1]) <= 12 && new Date(2000 + Number(m[2]), Number(m[1])) > new Date();
+        if (!expOk) errs.exp = 'Invalid or expired';
+        if (!/^\d{3,4}$/.test(fd.cvv || '')) errs.cvv = 'Invalid CVV';
+        payment.cardNumber = n;
+        payment.emiBank = co.emiBank;
+        payment.emiMonths = co.emiMonths;
       }
+
       Object.keys(fd).forEach((k) => fieldErr(form, k, errs[k]));
       if (Object.keys(errs).length) return;
 
+      // Interactive gateway authorization step (3DS2 OTP / Bank Login / UPI Collect)
+      if (co.payment === 'card' || co.payment === 'emi') {
+        const net = cardBrand(payment.cardNumber) || 'CARD';
+        const ok = await authorizeGatewayModal({ title: `${net} 3D Secure 2.0`, subtitle: `Card ending •••• ${payment.cardNumber.slice(-4)}`, badge: '3DS2 ACS', amount: totalAmt, mode: 'otp' });
+        if (!ok) return toast('Payment authorization cancelled', { type: 'error' });
+      } else if (co.payment === 'netbanking') {
+        const bName = ALL_BANKS.find((b) => b.code === co.bankCode)?.name || co.bankCode;
+        const ok = await authorizeGatewayModal({ title: `${bName} NetBanking`, subtitle: 'Retail Internet Banking Gateway', badge: co.bankCode, amount: totalAmt, mode: 'netbanking' });
+        if (!ok) return toast('Bank authorization cancelled', { type: 'error' });
+      } else if (co.payment === 'upi' && co.upiMode !== 'qr') {
+        const ok = await authorizeGatewayModal({ title: 'NPCI UPI Collect Request', subtitle: co.upiMode === 'vpa' ? `VPA: ${payment.upiId}` : `App: ${co.upiApp}`, badge: 'UPI 2.0', amount: totalAmt, mode: 'upi' });
+        if (!ok) return toast('UPI payment cancelled', { type: 'error' });
+      }
+
       const btn = $('#placeBtn');
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span> Processing payment…';
+      btn.innerHTML = '<span class="spinner"></span> Finalizing order…';
       try {
-        await new Promise((r) => setTimeout(r, 1200)); // simulate gateway latency
         const order = await api('/orders', {
           method: 'POST',
           body: { items: state.cart.map(({ id, qty, color, size }) => ({ id, qty, color, size })), coupon: state.coupon, shippingMethod: co.shipping, address: co.address, payment },
@@ -1258,7 +1610,7 @@ async function renderCheckout() {
 
   show();
   await refreshSummary();
-  if (co.step === 3 && $('#placeBtn') && quote) $('#placeBtn').innerHTML = `${ICON.lock} Place order · ${money(quote.total)}`;
+  if (co.step === 3) { $('#payForm').innerHTML = payFields(); bindPayForm(); }
 }
 
 // ---------- Order confirmation ----------
@@ -1277,6 +1629,15 @@ function confetti() {
   }
 }
 
+const fmtPayment = (p) => {
+  if (!p) return '';
+  if (p.method === 'card') return `${p.network || 'CARD'} •••• ${p.last4 || ''}`;
+  if (p.method === 'upi') return `UPI (${p.upiId || p.upiApp || 'UTR ' + (p.utr || '')})`;
+  if (p.method === 'netbanking') return `NetBanking · ${p.bankName || p.bankCode || ''}`;
+  if (p.method === 'emi') return `EMI · ${p.emiMonths}m × ${money(p.emiMonthly)} (${p.emiBank || ''})`;
+  return 'Cash on Delivery';
+};
+
 async function renderOrder({ parts, query, isCurrent }) {
   setTitle('Order confirmed');
   const o = await api('/orders/' + parts[1]);
@@ -1290,7 +1651,7 @@ async function renderOrder({ parts, query, isCurrent }) {
     <div class="order-meta">
       <div><span>Order number</span><b>${esc(o.id)}</b></div>
       <div><span>Estimated delivery</span><b>${fmtDate(o.estimatedDelivery, { weekday: 'short', day: 'numeric', month: 'short' })}</b></div>
-      <div><span>Payment</span><b style="text-transform:uppercase">${esc(o.payment.method)}${o.payment.last4 ? ' •••• ' + esc(o.payment.last4) : ''}</b></div>
+      <div><span>Payment (${esc(o.payment.status)})</span><b>${esc(fmtPayment(o.payment))}</b></div>
     </div>
     <div class="panel" style="text-align:left">
       <div class="mini-items" style="max-height:none">${o.items.map((i) => `<div class="mini-item"><div class="thumb"><img src="${esc(i.image)}" alt=""><i>${i.qty}</i></div><span class="mi-title">${esc(i.title)}${i.size ? ` · Size ${esc(i.size)}` : ''}</span><b>${money(i.lineTotal)}</b></div>`).join('')}</div>
@@ -1298,7 +1659,7 @@ async function renderOrder({ parts, query, isCurrent }) {
       ${o.discount ? `<div class="sum-row"><span>Discount (${esc(o.coupon)})</span><span class="green">− ${money(o.discount)}</span></div>` : ''}
       <div class="sum-row"><span>Shipping</span><span>${o.shipping ? money(o.shipping) : 'FREE'}</span></div>
       <div class="sum-row total"><span>Total paid</span><span>${money(o.total)}</span></div>
-      <p class="muted" style="font-size:.85rem;margin-bottom:0">Shipping to ${esc(o.address.name)}, ${esc(o.address.line1)}, ${esc(o.address.city)}, ${esc(o.address.state)} ${esc(o.address.pincode)}</p>
+      <p class="muted" style="font-size:.82rem;margin:10px 0 0">Shipping to <b>${esc(o.address.name)}</b>, ${esc(o.address.line1)}, ${esc(o.address.city)}, ${esc(o.address.state)} ${esc(o.address.pincode)}${o.payment.txnId ? ` · Ref: <b>${esc(o.payment.txnId)}</b>` : ''}</p>
     </div>
     <div style="display:flex;gap:12px;justify-content:center;margin-top:24px;flex-wrap:wrap">
       <a class="btn btn-primary" href="#/shop">Continue shopping</a>
@@ -1309,34 +1670,120 @@ async function renderOrder({ parts, query, isCurrent }) {
 }
 
 // ---------- Account ----------
+function pwStrength(pw) {
+  let s = 0;
+  if (pw.length >= 6) s++;
+  if (pw.length >= 10) s++;
+  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) s++;
+  if (/\d/.test(pw) || /[^A-Za-z0-9]/.test(pw)) s++;
+  return Math.min(4, s);
+}
+
 async function renderAccount({ isCurrent }) {
   const app = $('#app');
   if (state.token && !state.user) setAuth(null, null);
+  let activeSessions = 1;
   if (state.token) {
-    try { const { user } = await api('/auth/me'); setAuth(state.token, user); } catch { /* falls through to login */ }
+    try {
+      const me = await api('/auth/me');
+      setAuth(state.token, me.user);
+      activeSessions = me.activeSessions || 1;
+    } catch { /* falls through to login */ }
   }
   if (!isCurrent()) return;
 
   if (!state.user) {
     setTitle('Sign in');
-    let mode = 'login';
+    let mode = 'login'; // 'login' | 'register' | 'otp'
+    let otpSentTo = '';
+    let demoOtpVal = '';
     const paint = () => {
       app.innerHTML = `
       <div class="container auth-wrap">
         <div style="text-align:center;margin-bottom:22px"><div class="logo-mark" style="margin:0 auto 14px;width:52px;height:52px;font-size:1.5rem">L</div>
-          <h1>${mode === 'login' ? 'Welcome back' : 'Create your account'}</h1><p class="muted">${mode === 'login' ? 'Sign in to track orders and checkout faster.' : 'Join Lumen for faster checkout and exclusive offers.'}</p></div>
+          <h1>${mode === 'register' ? 'Create your account' : mode === 'otp' ? 'Passwordless OTP Sign In' : 'Welcome back'}</h1>
+          <p class="muted">${mode === 'register' ? 'Join Lumen for faster checkout, saved addresses and order tracking.' : mode === 'otp' ? 'Sign in instantly with a 6-digit verification code.' : 'Sign in to track orders, manage addresses and checkout faster.'}</p></div>
         <div class="panel">
-          <div class="auth-tabs"><button class="${mode === 'login' ? 'active' : ''}" data-mode="login">Sign in</button><button class="${mode === 'register' ? 'active' : ''}" data-mode="register">Register</button></div>
-          <form class="form-stack" id="authForm" novalidate>
-            ${mode === 'register' ? '<div class="field"><label>Full name</label><input class="input" name="name" autocomplete="name" required><span class="err"></span></div>' : ''}
-            <div class="field"><label>Email</label><input class="input" name="email" type="email" autocomplete="email" required><span class="err"></span></div>
-            <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}" minlength="6" required><span class="err"></span></div>
-            <button class="btn btn-primary btn-block" id="authBtn">${mode === 'login' ? 'Sign in' : 'Create account'}</button>
-          </form>
+          <div class="auth-tabs" style="grid-template-columns:1fr 1fr 1fr">
+            <button class="${mode === 'login' ? 'active' : ''}" data-mode="login">Password</button>
+            <button class="${mode === 'otp' ? 'active' : ''}" data-mode="otp">Email OTP</button>
+            <button class="${mode === 'register' ? 'active' : ''}" data-mode="register">Register</button>
+          </div>
+          ${mode === 'otp' ? `
+            <form class="form-stack" id="otpForm" novalidate>
+              <div class="field"><label>Email address</label><input class="input" name="email" type="email" value="${esc(otpSentTo)}" placeholder="you@example.com" required ${otpSentTo ? 'readonly' : ''}><span class="err"></span></div>
+              ${otpSentTo ? `
+                ${demoOtpVal ? `<div class="vpa-verified" style="margin:0">🔑 Demo OTP Code: <b>${esc(demoOtpVal)}</b> <button type="button" class="link-btn" id="autoOtpBtn" style="margin-left:auto;color:var(--primary);font-weight:800">Auto-fill</button></div>` : ''}
+                <div class="field"><label>6-digit verification code</label><input class="input" name="otp" id="otpCodeIn" inputmode="numeric" maxlength="6" placeholder="123456" required><span class="err"></span></div>
+                <button class="btn btn-primary btn-block" id="otpBtn">Verify & Sign in</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="resetOtpEmail">Change email / Resend code</button>
+              ` : `
+                <button class="btn btn-primary btn-block" id="otpBtn">Send 6-digit OTP</button>
+              `}
+            </form>
+          ` : `
+            <form class="form-stack" id="authForm" novalidate>
+              ${mode === 'register' ? `
+                <div class="field"><label>Full name</label><input class="input" name="name" autocomplete="name" placeholder="Aarav Sharma" required><span class="err"></span></div>
+                <div class="field"><label>Mobile number (optional)</label><input class="input" name="phone" inputmode="tel" maxlength="10" placeholder="10-digit mobile"><span class="err"></span></div>
+              ` : ''}
+              <div class="field"><label>Email address</label><input class="input" name="email" type="email" autocomplete="email" placeholder="you@example.com" required><span class="err"></span></div>
+              <div class="field">
+                <label>Password</label>
+                <div style="position:relative">
+                  <input class="input" id="authPw" name="password" type="password" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}" minlength="6" required style="padding-right:64px">
+                  <button type="button" id="togglePw" class="link-btn" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);text-decoration:none;font-weight:700">Show</button>
+                </div>
+                ${mode === 'register' ? `<div class="pw-meter" id="pwMeter"><i></i><i></i><i></i><i></i></div><span class="muted" id="pwHint" style="font-size:.75rem">At least 6 characters</span>` : ''}
+                <span class="err"></span>
+              </div>
+              <button class="btn btn-primary btn-block" id="authBtn">${mode === 'login' ? 'Sign in' : 'Create account'}</button>
+            </form>
+          `}
         </div>
       </div>`;
-      $$('[data-mode]').forEach((b) => b.addEventListener('click', () => { mode = b.dataset.mode; paint(); }));
-      $('#authForm').addEventListener('submit', async (e) => {
+
+      $$('[data-mode]').forEach((b) => b.addEventListener('click', () => { mode = b.dataset.mode; otpSentTo = ''; demoOtpVal = ''; paint(); }));
+      $('#togglePw')?.addEventListener('click', () => {
+        const inp = $('#authPw');
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+        $('#togglePw').textContent = inp.type === 'password' ? 'Show' : 'Hide';
+      });
+      if (mode === 'register') {
+        $('#authPw')?.addEventListener('input', (e) => {
+          const s = pwStrength(e.target.value);
+          $('#pwMeter').className = 'pw-meter' + (s ? ' s' + s : '');
+          $('#pwHint').textContent = ['At least 6 characters', 'Weak password', 'Fair password', 'Good password', 'Strong password'][s];
+        });
+      }
+
+      $('#otpForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = Object.fromEntries(new FormData(e.target));
+        const btn = $('#otpBtn');
+        btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+        try {
+          if (!otpSentTo) {
+            const r = await api('/auth/otp/send', { method: 'POST', body: { email: fd.email } });
+            otpSentTo = fd.email.trim();
+            demoOtpVal = r.demoOtp || '';
+            toast('6-digit OTP generated!');
+            paint();
+          } else {
+            const { token, user } = await api('/auth/otp/verify', { method: 'POST', body: { email: otpSentTo, otp: fd.otp } });
+            setAuth(token, user);
+            toast(`Signed in as ${user.name}! 🎉`);
+            router();
+          }
+        } catch (err) {
+          toast(err.message, { type: 'error' });
+          btn.disabled = false; btn.textContent = otpSentTo ? 'Verify & Sign in' : 'Send 6-digit OTP';
+        }
+      });
+      $('#autoOtpBtn')?.addEventListener('click', () => { if ($('#otpCodeIn')) $('#otpCodeIn').value = demoOtpVal; });
+      $('#resetOtpEmail')?.addEventListener('click', () => { otpSentTo = ''; demoOtpVal = ''; paint(); });
+
+      $('#authForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const body = Object.fromEntries(new FormData(e.target));
         const btn = $('#authBtn');
@@ -1358,54 +1805,175 @@ async function renderAccount({ isCurrent }) {
 
   setTitle('My account');
   const u = state.user;
+  let tab = 'orders'; // 'orders' | 'addresses' | 'security'
+  let orders = [];
+
   app.innerHTML = `
   <div class="container page-head">
-    <div class="account-head"><span class="avatar">${esc(initials(u.name))}</span><div><h2 style="margin:0">Hi, ${esc(u.name)} 👋</h2><span style="opacity:.85">${esc(u.email)} · Member since ${fmtDate(u.created, { month: 'short', year: 'numeric' })}</span></div><span class="spacer"></span><button class="btn btn-sm" id="logoutBtn">Sign out</button></div>
-    <h2>Your orders</h2>
-    <div id="orders">${'<div class="skeleton" style="height:140px;margin-bottom:16px;border-radius:16px"></div>'.repeat(2)}</div>
+    <div class="account-head"><span class="avatar">${esc(initials(u.name))}</span><div><h2 style="margin:0">Hi, ${esc(u.name)} 👋</h2><span style="opacity:.85">${esc(u.email)}${u.phone ? ' · 📞 ' + esc(u.phone) : ''} · Member since ${fmtDate(u.created, { month: 'short', year: 'numeric' })}</span></div><span class="spacer"></span><button class="btn btn-sm" id="logoutBtn">Sign out</button></div>
+    <div class="acct-nav" id="acctNav">
+      <button class="active" data-atab="orders">📦 Orders</button>
+      <button data-atab="addresses">📍 Saved Addresses (${(u.addresses || []).length})</button>
+      <button data-atab="security">🔐 Profile & Security</button>
+    </div>
+    <div id="acctBody">${'<div class="skeleton" style="height:140px;margin-bottom:16px;border-radius:16px"></div>'.repeat(2)}</div>
   </div>`;
+
   $('#logoutBtn').addEventListener('click', async () => {
     await api('/auth/logout', { method: 'POST' }).catch(() => {});
     setAuth(null, null); toast('Signed out'); router();
   });
 
-  const paintOrders = (orders) => {
-    const stages = ['confirmed', 'packed', 'shipped', 'delivered'];
-    $('#orders').innerHTML = orders.length ? orders.map((o) => {
-      const stage = o.status === 'cancelled' ? -1 : Math.max(stages.indexOf(o.status), Math.min(3, Math.floor((Date.now() - new Date(o.createdAt)) / ((new Date(o.estimatedDelivery) - new Date(o.createdAt)) / 3))));
-      return `
-      <div class="order-card">
-        <div class="order-card-head">
-          <div><span>Order placed</span><b>${fmtDate(o.createdAt)}</b></div>
-          <div><span>Total</span><b>${money(o.total)}</b></div>
-          <div><span>Order #</span><b>${esc(o.id)}</b></div>
-          <span class="spacer"></span>
-          <span class="status ${o.status}">${o.status !== 'cancelled' ? '●' : '✕'} ${o.status}</span>
-        </div>
-        <div class="order-card-body">
-          ${o.status !== 'cancelled' ? `<div class="tracker">${['Confirmed', 'Packed', 'Shipped', 'Delivered'].map((s, i) => `<div class="${i <= stage ? 'on' : ''}">${s}</div>`).join('')}</div>` : ''}
-          ${o.items.map((i) => `<div class="mini-item"><div class="thumb"><img src="${esc(i.image)}" alt=""><i>${i.qty}</i></div><a class="mi-title" href="#/product/${i.id}">${esc(i.title)}</a><b>${money(i.lineTotal)}</b></div>`).join('')}
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <a class="btn btn-sm" href="#/order/${o.id}">View details</a>
-            ${['confirmed', 'packed'].includes(o.status) && stage < 2 ? `<button class="btn btn-sm btn-ghost" data-cancel="${o.id}" style="color:var(--danger)">Cancel order</button>` : ''}
+  const paintTab = () => {
+    $$('#acctNav button').forEach((b) => b.classList.toggle('active', b.dataset.atab === tab));
+    const body = $('#acctBody');
+
+    if (tab === 'orders') {
+      const stages = ['confirmed', 'packed', 'shipped', 'delivered'];
+      body.innerHTML = orders.length ? orders.map((o) => {
+        const stage = o.status === 'cancelled' ? -1 : Math.max(stages.indexOf(o.status), Math.min(3, Math.floor((Date.now() - new Date(o.createdAt)) / ((new Date(o.estimatedDelivery) - new Date(o.createdAt)) / 3))));
+        return `
+        <div class="order-card">
+          <div class="order-card-head">
+            <div><span>Order placed</span><b>${fmtDate(o.createdAt)}</b></div>
+            <div><span>Total</span><b>${money(o.total)}</b></div>
+            <div><span>Payment</span><b>${esc(fmtPayment(o.payment))}</b></div>
+            <div><span>Order #</span><b>${esc(o.id)}</b></div>
+            <span class="spacer"></span>
+            <span class="status ${o.status}">${o.status !== 'cancelled' ? '●' : '✕'} ${o.status}</span>
           </div>
+          <div class="order-card-body">
+            ${o.status !== 'cancelled' ? `<div class="tracker">${['Confirmed', 'Packed', 'Shipped', 'Delivered'].map((s, i) => `<div class="${i <= stage ? 'on' : ''}">${s}</div>`).join('')}</div>` : ''}
+            ${o.items.map((i) => `<div class="mini-item"><div class="thumb"><img src="${esc(i.image)}" alt=""><i>${i.qty}</i></div><a class="mi-title" href="#/product/${i.id}">${esc(i.title)}</a><b>${money(i.lineTotal)}</b></div>`).join('')}
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <a class="btn btn-sm" href="#/order/${o.id}">View receipt</a>
+              ${['confirmed', 'packed'].includes(o.status) && stage < 2 ? `<button class="btn btn-sm btn-ghost" data-cancel="${o.id}" style="color:var(--danger)">Cancel order</button>` : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join('') : `<div class="empty"><div class="big">📦</div><h3>No orders yet</h3><p>When you place an order, it will show up here.</p><a class="btn btn-primary" href="#/shop">Start shopping</a></div>`;
+
+      body.onclick = async (e) => {
+        const id = e.target.closest('[data-cancel]')?.dataset.cancel;
+        if (!id || !confirm('Cancel this order?')) return;
+        try {
+          const updated = await api(`/orders/${id}/cancel`, { method: 'POST' });
+          orders.splice(orders.findIndex((o) => o.id === id), 1, updated);
+          paintTab();
+          toast('Order cancelled. Refund will be processed in 3–5 days.');
+        } catch (err) { toast(err.message, { type: 'error' }); }
+      };
+      return;
+    }
+
+    if (tab === 'addresses') {
+      const addrs = state.user.addresses || [];
+      body.innerHTML = `
+        <div class="addr-grid" style="margin-bottom:20px">
+          ${addrs.map((a, i) => `
+            <div class="addr-card">
+              <span class="tag new">${esc(a.label || 'Address')}</span>
+              <b>${esc(a.name)}</b>
+              <p class="muted" style="font-size:.85rem;margin:4px 0 12px">${esc(a.line1)}${a.line2 ? ', ' + esc(a.line2) : ''}<br>${esc(a.city)}, ${esc(a.state)} — ${esc(a.pincode)}<br>📞 ${esc(a.phone)}</p>
+              <button class="btn btn-sm btn-ghost" data-rmaddr="${i}" style="color:var(--danger)">Remove</button>
+            </div>`).join('')}
         </div>
-      </div>`;
-    }).join('') : `<div class="empty"><div class="big">📦</div><h3>No orders yet</h3><p>When you place an order, it will show up here.</p><a class="btn btn-primary" href="#/shop">Start shopping</a></div>`;
+        <form class="panel" id="newAddrForm" style="max-width:620px">
+          <h3>+ Add new address</h3>
+          <div class="grid-2">
+            <div class="field"><label>Label (e.g. Home, Office)</label><input class="input" name="label" value="Home" required></div>
+            <div class="field"><label>Recipient name</label><input class="input" name="name" value="${esc(state.user.name)}" required></div>
+            <div class="field"><label>Mobile number</label><input class="input" name="phone" value="${esc(state.user.phone || '')}" maxlength="10" required></div>
+            <div class="field"><label>PIN code</label><input class="input" name="pincode" maxlength="6" required></div>
+            <div class="field span-2"><label>Street address</label><input class="input" name="line1" required></div>
+            <div class="field"><label>City</label><input class="input" name="city" required></div>
+            <div class="field"><label>State</label><select class="input" name="state" required>${STATES.map((s) => `<option>${s}</option>`).join('')}</select></div>
+          </div>
+          <button class="btn btn-primary btn-sm" style="margin-top:14px">Save address</button>
+        </form>`;
+
+      $$('[data-rmaddr]', body).forEach((b) => b.addEventListener('click', async () => {
+        const next = addrs.filter((_, idx) => idx !== Number(b.dataset.rmaddr));
+        const { user } = await api('/auth/profile', { method: 'PATCH', body: { addresses: next } });
+        setAuth(state.token, user);
+        toast('Address removed');
+        paintTab();
+      }));
+      $('#newAddrForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = Object.fromEntries(new FormData(e.target));
+        const next = [{ id: String(Date.now()), ...fd }, ...addrs].slice(0, 5);
+        try {
+          const { user } = await api('/auth/profile', { method: 'PATCH', body: { addresses: next } });
+          setAuth(state.token, user);
+          toast('Address saved');
+          paintTab();
+        } catch (err) { toast(err.message, { type: 'error' }); }
+      });
+      return;
+    }
+
+    if (tab === 'security') {
+      body.innerHTML = `
+        <div class="grid-2" style="align-items:start">
+          <form class="panel form-stack" id="profForm">
+            <h3>👤 Profile details</h3>
+            <div class="field"><label>Full name</label><input class="input" name="name" value="${esc(state.user.name)}" required></div>
+            <div class="field"><label>Email address</label><input class="input" value="${esc(state.user.email)}" disabled></div>
+            <div class="field"><label>Mobile number</label><input class="input" name="phone" value="${esc(state.user.phone || '')}" maxlength="10" placeholder="10-digit mobile"></div>
+            <button class="btn btn-primary btn-sm" style="justify-self:start">Save profile</button>
+          </form>
+          <form class="panel form-stack" id="userPwForm">
+            <h3>🔐 Change password</h3>
+            <div class="field"><label>Current password</label><input class="input" name="current" type="password" required></div>
+            <div class="field"><label>New password (min 6 chars)</label><input class="input" name="next" type="password" minlength="6" required></div>
+            <button class="btn btn-primary btn-sm" style="justify-self:start">Update password</button>
+            <hr style="border:0;border-top:1px solid var(--border);margin:8px 0">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <span class="muted" style="font-size:.84rem">Active sessions on this account: <b>${activeSessions}</b></span>
+              <button type="button" class="btn btn-sm" id="logoutAllBtn">Sign out other devices</button>
+            </div>
+          </form>
+        </div>`;
+
+      $('#profForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = Object.fromEntries(new FormData(e.target));
+        try {
+          const { user } = await api('/auth/profile', { method: 'PATCH', body: fd });
+          setAuth(state.token, user);
+          toast('Profile updated');
+          router();
+        } catch (err) { toast(err.message, { type: 'error' }); }
+      });
+      $('#userPwForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = Object.fromEntries(new FormData(e.target));
+        try {
+          await api('/auth/password', { method: 'POST', body: fd });
+          e.target.reset();
+          toast('Password updated & other sessions signed out');
+        } catch (err) { toast(err.message, { type: 'error' }); }
+      });
+      $('#logoutAllBtn')?.addEventListener('click', async () => {
+        await api('/auth/logout-all', { method: 'POST' });
+        activeSessions = 1;
+        toast('Signed out of all other sessions');
+        paintTab();
+      });
+    }
   };
-  const orders = await api('/orders');
-  if (!isCurrent()) return;
-  paintOrders(orders);
-  $('#orders').addEventListener('click', async (e) => {
-    const id = e.target.closest('[data-cancel]')?.dataset.cancel;
-    if (!id || !confirm('Cancel this order?')) return;
-    try {
-      const updated = await api(`/orders/${id}/cancel`, { method: 'POST' });
-      orders.splice(orders.findIndex((o) => o.id === id), 1, updated);
-      paintOrders(orders);
-      toast('Order cancelled. Refund will be processed in 3–5 days.');
-    } catch (err) { toast(err.message, { type: 'error' }); }
+
+  $('#acctNav').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-atab]');
+    if (!b) return;
+    tab = b.dataset.atab;
+    paintTab();
   });
+
+  orders = await api('/orders');
+  if (!isCurrent()) return;
+  paintTab();
 }
 
 // ---------- Wishlist ----------
