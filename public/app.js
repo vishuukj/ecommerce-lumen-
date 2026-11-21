@@ -162,14 +162,15 @@ function productCard(p, i = 0) {
   ].join('');
   return `
   <article class="card" style="animation-delay:${Math.min(i, 12) * 40}ms">
+    <div class="card-glare"></div>
     <a class="card-media" href="#/product/${p.id}" aria-label="${esc(p.title)}">
       <img src="${esc(p.images[0])}" alt="${esc(p.title)}" loading="lazy" data-cat="${p.category}">
       ${p.images[1] ? `<img class="alt" src="${esc(p.images[1])}" alt="" loading="lazy">` : ''}
     </a>
-    <div class="card-badges">${badges}</div>
+    <div class="card-badges">${badges}<span class="badge-3d">🧊 3D View</span></div>
     <div class="card-actions">
       <button class="round-btn ${wished ? 'wished' : ''}" data-wish="${p.id}" aria-label="Add to wishlist" title="Wishlist">${ICON.heart}</button>
-      <button class="round-btn quick" data-quick="${p.id}" aria-label="Quick view" title="Quick view">${ICON.eye}</button>
+      <button class="round-btn quick" data-quick="${p.id}" aria-label="Quick view &amp; 3D" title="Quick 3D View">${ICON.eye}</button>
     </div>
     <div class="card-body">
       <span class="card-brand">${esc(p.brand)}</span>
@@ -220,9 +221,12 @@ function quickView(id) {
   if (!p) return;
   openModal(`
     <div class="quickview">
-      <div class="qv-img"><img src="${esc(p.images[0])}" alt="${esc(p.title)}" data-cat="${p.category}"></div>
+      <div class="qv-img" id="qvStageWrap"></div>
       <div class="qv-info">
-        <span class="card-brand">${esc(p.brand)}</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span class="card-brand">${esc(p.brand)}</span>
+          <span class="badge-3d">🧊 Interactive 3D</span>
+        </div>
         <h2>${esc(p.title)}</h2>
         ${ratingPill(p)}
         <div class="pdp-price"><span class="price">${money(p.price)}</span><span class="mrp">${money(p.mrp)}</span><span class="off">${pctOff(p)}% off</span></div>
@@ -230,10 +234,11 @@ function quickView(id) {
         <ul class="feature-list">${p.features.slice(0, 3).map((f) => `<li>${esc(f)}</li>`).join('')}</ul>
         <div class="buy-row" style="margin-top:auto">
           <button class="btn btn-primary" data-add="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>${ICON.cart} Add to cart</button>
-          <a class="btn" href="#/product/${p.id}" data-close-modal>View details</a>
+          <a class="btn" href="#/product/${p.id}" data-close-modal>Open 3D Studio</a>
         </div>
       </div>
     </div>`);
+  mount3DStage($('#qvStageWrap'), p, { compact: true });
 }
 
 // ---------- Cart drawer ----------
@@ -402,6 +407,31 @@ document.addEventListener('click', (e) => {
   if (t.hasAttribute('data-close-drawer')) closeDrawers();
   if (t.hasAttribute('data-close-modal')) closeModal();
 });
+
+// Interactive 3D perspective tilt + specular glare on product cards
+let activeTiltCard = null;
+document.addEventListener('pointermove', (e) => {
+  if (e.pointerType === 'touch') return;
+  const card = e.target.closest('.card');
+  if (activeTiltCard && activeTiltCard !== card) {
+    activeTiltCard.classList.remove('tilt-active');
+    activeTiltCard.style.removeProperty('--rx');
+    activeTiltCard.style.removeProperty('--ry');
+    activeTiltCard = null;
+  }
+  if (!card) return;
+  activeTiltCard = card;
+  const r = card.getBoundingClientRect();
+  const px = (e.clientX - r.left) / r.width;
+  const py = (e.clientY - r.top) / r.height;
+  const ry = ((px - 0.5) * 14).toFixed(2) + 'deg';
+  const rx = ((0.5 - py) * 14).toFixed(2) + 'deg';
+  card.style.setProperty('--rx', rx);
+  card.style.setProperty('--ry', ry);
+  card.style.setProperty('--gx', (px * 100).toFixed(1) + '%');
+  card.style.setProperty('--gy', (py * 100).toFixed(1) + '%');
+  card.classList.add('tilt-active');
+}, { passive: true });
 
 // ---------- Router ----------
 let cleanups = [];
@@ -802,6 +832,164 @@ async function renderShop({ query, isCurrent }) {
   await load();
 }
 
+// ---------- Immersive 3D Product Studio ----------
+function mount3DStage(container, p, { compact = false } = {}) {
+  if (!container) return () => {};
+  const frontImg = p.images?.[0] || '';
+  const backImg = p.images?.[1] || frontImg;
+  const feats = (p.features || []).slice(0, 3);
+  const hotspots = [
+    { x: 22, y: 26, text: feats[0] || `${p.brand} signature craftsmanship` },
+    { x: 76, y: 44, text: feats[1] || 'Precision-engineered materials & finish' },
+    { x: 34, y: 74, text: feats[2] || `Backed by ${p.specs?.Warranty || 'official'} warranty` },
+  ];
+
+  container.innerHTML = `
+    <div class="stage-3d" id="stage3d_${p.id}">
+      <div class="stage-3d-grid"></div>
+      <div class="turntable-ring"></div>
+      <div class="rig-3d" id="rig3d">
+        <div class="rig-edge"></div>
+        <div class="rig-face front">
+          <img src="${esc(frontImg)}" alt="${esc(p.title)}" data-cat="${esc(p.category)}">
+          <div class="rig-glare"></div>
+        </div>
+        <div class="rig-face back">
+          <img src="${esc(backImg)}" alt="${esc(p.title)} back view" data-cat="${esc(p.category)}">
+          <div class="rig-glare"></div>
+        </div>
+        <div id="hotspotsWrap">
+          ${hotspots.map((h, i) => `<button type="button" class="hotspot-3d ${i === 0 ? 'active' : ''}" data-hs="${i}" style="left:${h.x}%;top:${h.y}%" aria-label="Feature ${i + 1}">+${i + 1}</button>`).join('')}
+        </div>
+      </div>
+      <div class="hotspot-card" id="hsCard" ${compact ? 'hidden' : ''}>
+        <b>✦ Feature 1:</b> <span id="hsText">${esc(hotspots[0].text)}</span>
+      </div>
+      <div class="hud-3d">
+        <span class="hud-angle" id="hudAngle">3D · 0°</span>
+        <div class="hud-btns">
+          <button type="button" class="active" data-3dact="spin" title="Toggle 360° Auto-Spin">⟳ Auto-Spin</button>
+          ${compact ? '' : '<button type="button" class="active" data-3dact="spots" title="Toggle 3D Feature Hotspots">✦ Hotspots</button>'}
+          <button type="button" data-3dact="flip" title="Flip 180°">⇄ Flip</button>
+          <button type="button" data-3dact="reset" title="Reset camera">Reset</button>
+        </div>
+      </div>
+    </div>`;
+
+  const stage = container.querySelector('.stage-3d');
+  const rig = container.querySelector('#rig3d');
+  const angleEl = container.querySelector('#hudAngle');
+  const hsCard = container.querySelector('#hsCard');
+  const hsText = container.querySelector('#hsText');
+  const hsWrap = container.querySelector('#hotspotsWrap');
+
+  let rotY = -16;
+  let rotX = 8;
+  let scale = 1;
+  let autoSpin = true;
+  let dragging = false;
+  let lastX = 0;
+  let lastY = 0;
+  let rafId = null;
+
+  const applyTransform = () => {
+    rig.style.transform = `rotateX(${rotX.toFixed(1)}deg) rotateY(${rotY.toFixed(1)}deg) scale3d(${scale.toFixed(2)}, ${scale.toFixed(2)}, ${scale.toFixed(2)})`;
+    const norm = (((Math.round(rotY) % 360) + 360) % 360);
+    if (angleEl) angleEl.textContent = `3D · ${norm}°`;
+  };
+
+  const loop = () => {
+    if (autoSpin && !dragging) {
+      rotY += 0.45;
+      applyTransform();
+    }
+    rafId = requestAnimationFrame(loop);
+  };
+  rafId = requestAnimationFrame(loop);
+
+  const onDown = (x, y) => {
+    dragging = true;
+    lastX = x;
+    lastY = y;
+  };
+  const onMove = (x, y) => {
+    const r = stage.getBoundingClientRect();
+    const lx = Math.max(0, Math.min(100, ((x - r.left) / r.width) * 100));
+    const ly = Math.max(0, Math.min(100, ((y - r.top) / r.height) * 100));
+    stage.style.setProperty('--lx', lx.toFixed(1) + '%');
+    stage.style.setProperty('--ly', ly.toFixed(1) + '%');
+    if (!dragging) return;
+    const dx = x - lastX;
+    const dy = y - lastY;
+    lastX = x;
+    lastY = y;
+    rotY += dx * 0.75;
+    rotX = Math.max(-42, Math.min(42, rotX - dy * 0.55));
+    applyTransform();
+  };
+  const onUp = () => { dragging = false; };
+
+  stage.addEventListener('mousedown', (e) => { if (!e.target.closest('button')) onDown(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup', onUp);
+
+  stage.addEventListener('touchstart', (e) => {
+    if (e.target.closest('button')) return;
+    const t = e.touches[0];
+    onDown(t.clientX, t.clientY);
+  }, { passive: true });
+  stage.addEventListener('touchmove', (e) => {
+    const t = e.touches[0];
+    onMove(t.clientX, t.clientY);
+  }, { passive: true });
+  stage.addEventListener('touchend', onUp);
+
+  stage.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    scale = Math.max(0.75, Math.min(1.55, scale - e.deltaY * 0.0012));
+    applyTransform();
+  }, { passive: false });
+
+  // Hotspots
+  $$('.hotspot-3d', stage).forEach((btn) => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const idx = Number(btn.dataset.hs);
+    $$('.hotspot-3d', stage).forEach((x) => x.classList.toggle('active', x === btn));
+    if (hsCard && hsText) {
+      hsCard.hidden = false;
+      hsCard.querySelector('b').textContent = `✦ Feature ${idx + 1}:`;
+      hsText.textContent = hotspots[idx].text;
+    }
+  }));
+
+  // HUD controls
+  $$('[data-3dact]', stage).forEach((btn) => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const act = btn.getAttribute('data-3dact');
+    if (act === 'spin') {
+      autoSpin = !autoSpin;
+      btn.classList.toggle('active', autoSpin);
+    } else if (act === 'spots') {
+      const hidden = !hsWrap.hidden;
+      hsWrap.hidden = hidden;
+      if (hsCard) hsCard.hidden = hidden;
+      btn.classList.toggle('active', !hidden);
+    } else if (act === 'flip') {
+      rotY += 180;
+      applyTransform();
+    } else if (act === 'reset') {
+      rotX = 8; rotY = -16; scale = 1;
+      applyTransform();
+    }
+  }));
+
+  applyTransform();
+  return () => {
+    cancelAnimationFrame(rafId);
+    window.removeEventListener('mouseup', onUp);
+  };
+}
+
 // ---------- Product detail ----------
 async function renderProduct({ parts, isCurrent }) {
   $('#app').innerHTML = `<div class="container pdp"><div class="skeleton" style="aspect-ratio:1;border-radius:24px"></div>
@@ -814,7 +1002,7 @@ async function renderProduct({ parts, isCurrent }) {
   store.set('recent', state.recent);
 
   const cat = state.categories.find((c) => c.id === p.category);
-  const sel = { color: p.colors?.[0] || null, size: null, qty: 1, img: 0 };
+  const sel = { color: p.colors?.[0] || null, size: null, qty: 1, img: 0, mode: '3d' };
   const stockCls = p.stock <= 0 ? 'out' : p.stock <= 10 ? 'low' : '';
   const stockTxt = p.stock <= 0 ? 'Out of stock' : p.stock <= 10 ? `Hurry, only ${p.stock} left in stock!` : 'In stock — ready to ship';
   const dist = [5, 4, 3, 2, 1].map((s) => reviews.filter((r) => r.rating === s).length);
@@ -825,9 +1013,18 @@ async function renderProduct({ parts, isCurrent }) {
     <div class="breadcrumbs"><a href="#/">Home</a> / <a href="#/shop?category=${p.category}">${esc(cat?.name || p.category)}</a> / <span>${esc(p.title)}</span></div>
   </div>
   <div class="container pdp">
-    <div class="gallery">
-      <div class="thumbs">${p.images.map((src, i) => `<button class="${i === 0 ? 'active' : ''}" data-img="${i}" aria-label="Image ${i + 1}"><img src="${esc(src)}" alt="" data-cat="${p.category}"></button>`).join('')}</div>
-      <div class="main-img" id="mainImg"><img src="${esc(p.images[0])}" alt="${esc(p.title)}" data-cat="${p.category}"></div>
+    <div>
+      <div class="view-mode-switch" id="viewModeSwitch">
+        <button type="button" class="active" data-vmode="3d">🧊 3D Interactive Studio</button>
+        <button type="button" data-vmode="2d">🖼️ 2D HD Photos (${p.images.length})</button>
+      </div>
+      <div class="gallery">
+        <div class="thumbs">${p.images.map((src, i) => `<button class="${i === 0 ? 'active' : ''}" data-img="${i}" aria-label="Image ${i + 1}"><img src="${esc(src)}" alt="" data-cat="${p.category}"></button>`).join('')}</div>
+        <div>
+          <div id="stage3dMount"></div>
+          <div class="main-img" id="mainImg" hidden><img src="${esc(p.images[0])}" alt="${esc(p.title)}" data-cat="${p.category}"></div>
+        </div>
+      </div>
     </div>
     <div class="pdp-info">
       <span class="brand">${esc(p.brand)}</span>
@@ -871,11 +1068,25 @@ async function renderProduct({ parts, isCurrent }) {
   </div>
   ${related.length ? `<section class="section container reveal"><div class="section-head"><div><h2>You may also like</h2><p>More from ${esc(cat?.name || '')}</p></div></div><div class="h-scroll">${related.map(productCard).join('')}</div></section>` : ''}`;
 
-  // Gallery + zoom
+  // 3D Studio + 2D Gallery switch
   const main = $('#mainImg');
+  const stageMount = $('#stage3dMount');
+  const cleanup3d = mount3DStage(stageMount, p);
+  onCleanup(cleanup3d);
+
+  const setViewMode = (mode) => {
+    sel.mode = mode;
+    $$('#viewModeSwitch button').forEach((b) => b.classList.toggle('active', b.dataset.vmode === mode));
+    stageMount.hidden = mode !== '3d';
+    main.hidden = mode !== '2d';
+  };
+  $$('#viewModeSwitch button').forEach((b) => b.addEventListener('click', () => setViewMode(b.dataset.vmode)));
+
   $$('.thumbs button').forEach((b) => b.addEventListener('click', () => {
     $$('.thumbs button').forEach((x) => x.classList.toggle('active', x === b));
-    const im = $('img', main); if (im) im.src = p.images[Number(b.dataset.img)];
+    const src = p.images[Number(b.dataset.img)];
+    const im = $('img', main); if (im) im.src = src;
+    const front3d = $('.rig-face.front img', stageMount); if (front3d) front3d.src = src;
   }));
   main.addEventListener('mousemove', (e) => {
     const r = main.getBoundingClientRect();
@@ -904,7 +1115,7 @@ async function renderProduct({ parts, isCurrent }) {
     addToCart(p, { qty: sel.qty, color: sel.color, size: sel.size, silent });
     return cartCount() > before;
   };
-  $('#addBtn').addEventListener('click', () => { if (doAdd(false)) flyToCart($('img', main)); });
+  $('#addBtn').addEventListener('click', () => { if (doAdd(false)) flyToCart($('.rig-face.front img', stageMount) || $('img', main)); });
   $('#buyBtn').addEventListener('click', () => { if (doAdd(true)) location.hash = '#/checkout'; });
   $('#shareBtn').addEventListener('click', async () => {
     const url = location.href;

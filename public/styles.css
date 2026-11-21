@@ -362,6 +362,124 @@ textarea.input { height: auto; padding: 12px 14px; resize: vertical; }
 .main-img { position: relative; aspect-ratio: 1; border-radius: 24px; overflow: hidden; background: var(--surface-2); cursor: zoom-in; }
 .main-img img { width: 100%; height: 100%; object-fit: cover; transition: transform .2s ease-out; }
 .main-img.zoom img { transform: scale(2); }
+
+/* ---------- Immersive 3D Product Studio & Card Tilt ---------- */
+.card {
+  --rx: 0deg;
+  --ry: 0deg;
+  --gx: 50%;
+  --gy: 50%;
+  transform-style: preserve-3d;
+}
+.card.tilt-active {
+  transform: perspective(900px) rotateX(var(--rx)) rotateY(var(--ry)) translateY(-6px) !important;
+  transition: box-shadow .25s var(--ease);
+}
+.card-glare {
+  position: absolute; inset: 0; pointer-events: none; z-index: 3; opacity: 0;
+  background: radial-gradient(320px circle at var(--gx) var(--gy), rgba(252, 165, 157, .24), rgba(255, 255, 255, .14) 40%, transparent 70%);
+  transition: opacity .25s;
+}
+.card.tilt-active .card-glare { opacity: 1; }
+.badge-3d {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px;
+  background: rgba(2, 2, 2, .78); color: #FCA59D; border: 1px solid rgba(252, 165, 157, .45);
+  font-size: .66rem; font-weight: 800; letter-spacing: .04em; backdrop-filter: blur(6px);
+}
+
+.view-mode-switch {
+  display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border); margin-bottom: 12px;
+}
+.view-mode-switch button {
+  border: 0; background: transparent; height: 34px; padding: 0 14px; border-radius: 999px;
+  font-weight: 800; font-size: .8rem; color: var(--muted); display: inline-flex; align-items: center; gap: 6px;
+}
+.view-mode-switch button.active {
+  background: #020202; color: #FCA59D; box-shadow: var(--shadow-sm);
+}
+
+.stage-3d {
+  position: relative; aspect-ratio: 1; border-radius: 24px; overflow: hidden;
+  background:
+    radial-gradient(600px circle at var(--lx, 50%) var(--ly, 35%), rgba(252, 165, 157, .22), transparent 65%),
+    radial-gradient(450px circle at 50% 85%, rgba(252, 165, 157, .12), transparent 70%),
+    linear-gradient(160deg, #0b0b0c 0%, #020202 65%, #161010 100%);
+  border: 1px solid rgba(252, 165, 157, .3);
+  perspective: 1200px; cursor: grab; user-select: none; touch-action: none;
+  display: grid; place-items: center;
+}
+.stage-3d:active { cursor: grabbing; }
+.stage-3d-grid {
+  position: absolute; inset: 0; pointer-events: none; opacity: .22;
+  background-image:
+    linear-gradient(rgba(252, 165, 157, .16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(252, 165, 157, .16) 1px, transparent 1px);
+  background-size: 36px 36px;
+  transform: perspective(600px) rotateX(68deg) translateY(38%) scale(1.4);
+  transform-origin: center bottom;
+}
+.turntable-ring {
+  position: absolute; width: 72%; aspect-ratio: 1; border-radius: 50%;
+  border: 1.5px dashed rgba(252, 165, 157, .38);
+  box-shadow: 0 0 50px rgba(252, 165, 157, .18), inset 0 0 30px rgba(252, 165, 157, .12);
+  transform: rotateX(74deg) translateZ(-90px);
+  pointer-events: none;
+}
+.rig-3d {
+  position: relative; width: 72%; height: 72%;
+  transform-style: preserve-3d;
+  transition: transform .08s linear;
+}
+.rig-face {
+  position: absolute; inset: 0; border-radius: 22px; overflow: hidden;
+  background: #121212; border: 1.5px solid rgba(252, 165, 157, .42);
+  box-shadow: 0 28px 60px rgba(0, 0, 0, .65);
+  backface-visibility: hidden;
+}
+.rig-face img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.rig-face.front { transform: translateZ(16px); }
+.rig-face.back { transform: rotateY(180deg) translateZ(16px); }
+.rig-edge {
+  position: absolute; top: 4%; bottom: 4%; width: 32px; left: calc(50% - 16px);
+  background: linear-gradient(180deg, #FCA59D, #2a1917 50%, #FCA59D);
+  transform: rotateY(90deg); opacity: .75; border-radius: 8px;
+}
+.rig-glare {
+  position: absolute; inset: 0; border-radius: 22px; pointer-events: none;
+  background: radial-gradient(320px circle at var(--lx, 50%) var(--ly, 35%), rgba(255, 255, 255, .34), rgba(252, 165, 157, .14) 38%, transparent 70%);
+  mix-blend-mode: screen;
+}
+.hotspot-3d {
+  position: absolute; width: 28px; height: 28px; border-radius: 50%;
+  background: #FCA59D; color: #020202; border: 2px solid #020202;
+  font-weight: 900; font-size: .75rem; display: grid; place-items: center;
+  box-shadow: 0 0 0 6px rgba(252, 165, 157, .28), 0 8px 20px rgba(0,0,0,.5);
+  transform: translateZ(34px); cursor: pointer; transition: transform .2s;
+}
+.hotspot-3d:hover, .hotspot-3d.active { transform: translateZ(42px) scale(1.15); background: #ffffff; }
+.hotspot-card {
+  position: absolute; left: 16px; right: 16px; bottom: 58px; z-index: 6;
+  padding: 10px 14px; border-radius: 14px;
+  background: rgba(2, 2, 2, .86); color: #ffffff; border: 1px solid rgba(252, 165, 157, .45);
+  backdrop-filter: blur(10px); font-size: .82rem; display: flex; align-items: center; gap: 10px;
+  animation: fadeUp .22s var(--ease);
+}
+.hotspot-card b { color: #FCA59D; }
+.hud-3d {
+  position: absolute; left: 14px; right: 14px; bottom: 14px; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap;
+  padding: 7px 10px; border-radius: 999px;
+  background: rgba(2, 2, 2, .78); border: 1px solid rgba(252, 165, 157, .3);
+  backdrop-filter: blur(10px); color: #ffffff; font-size: .74rem;
+}
+.hud-3d .hud-btns { display: flex; gap: 4px; }
+.hud-3d button {
+  border: 1px solid rgba(252, 165, 157, .28); background: rgba(255, 255, 255, .06);
+  color: #ffffff; height: 28px; padding: 0 10px; border-radius: 999px; font-size: .73rem; font-weight: 700;
+}
+.hud-3d button.active, .hud-3d button:hover { background: #FCA59D; color: #020202; border-color: #FCA59D; }
+.hud-angle { font-family: ui-monospace, monospace; color: #FCA59D; font-weight: 800; padding-left: 6px; }
 .pdp-info .brand { color: var(--primary); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; font-size: .8rem; }
 .pdp-info h1 { font-size: clamp(1.6rem, 3vw, 2.3rem); font-weight: 800; margin: 6px 0 12px; }
 .pdp-price { display: flex; align-items: baseline; gap: 12px; margin: 18px 0 4px; }
