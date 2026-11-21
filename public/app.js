@@ -615,9 +615,9 @@ async function renderShop({ query, isCurrent }) {
   // First fetch facets to build the price slider bounds
   const [first] = await Promise.all([api('/products?limit=1'), api('/categories').then((c) => { state.categories = c; }).catch(() => {})]);
   if (!isCurrent()) return;
-  const { brands, minPrice, maxPrice } = first.facets;
+  const { brands = [], minPrice = 0, maxPrice = 100000 } = first?.facets || {};
   const lo = Math.floor(minPrice / 100) * 100;
-  const hi = Math.ceil(maxPrice / 1000) * 1000;
+  const hi = Math.max(lo + 1000, Math.ceil(maxPrice / 1000) * 1000);
   if (!f.max) f.max = hi;
   if (!f.min) f.min = lo;
 

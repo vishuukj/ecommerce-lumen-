@@ -243,6 +243,12 @@ function send(res, status, data) {
   res.end(JSON.stringify(data));
 }
 function readBody(req, limit = 1e6) {
+  if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
+    return Promise.resolve(req.body);
+  }
+  if (typeof req.body === 'string') {
+    try { return Promise.resolve(req.body ? JSON.parse(req.body) : {}); } catch { return Promise.reject(httpError(400, 'Invalid JSON')); }
+  }
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -689,6 +695,12 @@ function serveStatic(req, res, url) {
 // ---------------------------------------------------------------------------
 async function requestHandler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  // Normalize Vercel rewrite paths if passed via __path query param
+  const rewrittenPath = url.searchParams.get('__path');
+  if (rewrittenPath) {
+    url.pathname = rewrittenPath.startsWith('/') ? rewrittenPath : '/' + rewrittenPath;
+    url.searchParams.delete('__path');
+  }
   if (url.pathname.startsWith('/api/')) {
     try {
       await handleApi(req, res, url);
