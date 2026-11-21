@@ -1,0 +1,14 @@
+{
+  "name": "lumen-store",
+  "version": "1.0.0",
+  "description": "Lumen - a modern, interactive online shopping platform (zero-dependency Node.js + vanilla JS SPA)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
