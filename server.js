@@ -5,14 +5,16 @@
 
 const http = require('http');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const seed = require('./data/catalog');
 
 const PORT = Number(process.env.PORT) || 3000;
+const IS_SERVERLESS = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const UPLOAD_DIR = path.join(PUBLIC_DIR, 'uploads');
-const DB_FILE = path.join(__dirname, 'data', 'db.json');
+const UPLOAD_DIR = IS_SERVERLESS ? path.join(os.tmpdir(), 'lumen-uploads') : path.join(PUBLIC_DIR, 'uploads');
+const DB_FILE = IS_SERVERLESS ? path.join(os.tmpdir(), 'lumen-db.json') : path.join(__dirname, 'data', 'db.json');
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const ADMIN_SESSION_TTL = 12 * 60 * 60 * 1000; // 12 hours
 
@@ -20,11 +22,12 @@ const ADMIN_SESSION_TTL = 12 * 60 * 60 * 1000; // 12 hours
 // Persistence
 // ---------------------------------------------------------------------------
 function loadDb() {
-  try {
-    return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  } catch {
-    return {};
+  for (const f of [DB_FILE, path.join(__dirname, 'data', 'db.json')]) {
+    try {
+      return JSON.parse(fs.readFileSync(f, 'utf8'));
+    } catch { /* next */ }
   }
+  return {};
 }
 const db = loadDb();
 db.users ??= [];
@@ -44,9 +47,14 @@ let saveTimer = null;
 function saveDb() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    const tmp = DB_FILE + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-    fs.renameSync(tmp, DB_FILE);
+    try {
+      fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
+      const tmp = DB_FILE + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
+      fs.renameSync(tmp, DB_FILE);
+    } catch (err) {
+      console.warn('Could not persist db file:', err.message);
+    }
   }, 50);
 }
 
@@ -658,11 +666,14 @@ const MIME = {
 function serveStatic(req, res, url) {
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === '/admin' || pathname === '/admin/') pathname = '/admin.html';
-  let filePath = path.normalize(path.join(PUBLIC_DIR, pathname));
-  if (!filePath.startsWith(PUBLIC_DIR)) { res.writeHead(403); return res.end('Forbidden'); }
+  const isUpload = pathname.startsWith('/uploads/');
+  const baseDir = isUpload ? UPLOAD_DIR : PUBLIC_DIR;
+  const relPath = isUpload ? pathname.slice('/uploads/'.length) : pathname;
+  let filePath = path.normalize(path.join(baseDir, relPath));
+  if (!filePath.startsWith(baseDir)) { res.writeHead(403); return res.end('Forbidden'); }
   fs.stat(filePath, (err, stat) => {
     if (err || stat.isDirectory()) {
-      if (pathname.startsWith('/uploads/')) { res.writeHead(404); return res.end('Not found'); }
+      if (isUpload) { res.writeHead(404); return res.end('Not found'); }
       filePath = path.join(PUBLIC_DIR, 'index.html'); // SPA fallback
     }
     fs.readFile(filePath, (err2, data) => {
@@ -676,7 +687,7 @@ function serveStatic(req, res, url) {
 }
 
 // ---------------------------------------------------------------------------
-const server = http.createServer(async (req, res) => {
+async function requestHandler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   if (url.pathname.startsWith('/api/')) {
     try {
@@ -688,7 +699,9 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   serveStatic(req, res, url);
-});
+}
+
+const server = http.createServer(requestHandler);
 
 if (require.main === module) {
   server.listen(PORT, () => {
@@ -698,4 +711,5 @@ if (require.main === module) {
   });
 }
 
-module.exports = { server, priceCart };
+// Export a request handler function for serverless platforms (Vercel) and attach helpers.
+module.exports = Object.assign(requestHandler, { server, priceCart, requestHandler });
