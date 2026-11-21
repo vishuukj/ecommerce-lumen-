@@ -2016,9 +2016,181 @@ function renderNotFound() {
   $('#app').innerHTML = `<div class="container empty"><div class="big">🧭</div><h1>Page not found</h1><p>The page you're looking for doesn't exist or has moved.</p><a class="btn btn-primary" href="#/">Back to home</a></div>`;
 }
 
+// ---------- Lumen AI Support Chatbot ----------
+function formatBotMarkdown(text) {
+  return esc(text)
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\n/g, '<br>');
+}
+
+function initChatbot() {
+  const fab = $('#chatFab');
+  const widget = $('#chatWidget');
+  const msgsEl = $('#chatMessages');
+  const chipsEl = $('#chatChips');
+  const form = $('#chatForm');
+  const input = $('#chatInput');
+  if (!fab || !widget) return;
+
+  const DEFAULT_CHIPS = ['Track my order', 'Active coupon codes', 'Gifts under ₹2,500', 'UPI & EMI options', 'Return policy'];
+  let history = store.get('chatHistory', []);
+
+  const welcomeMsg = () => ({
+    role: 'bot',
+    reply: `Hi${state.user ? ' ' + state.user.name.split(' ')[0] : ''}! 👋 I'm **Lumen AI**, your 24/7 shopping & support assistant.\nAsk me to **recommend products**, **track an order** (\`LMN...\`), **apply a coupon**, or help with **UPI, NetBanking, EMI & returns**.`,
+    suggestions: DEFAULT_CHIPS,
+  });
+
+  if (!history.length) history = [welcomeMsg()];
+
+  const setChips = (list = DEFAULT_CHIPS) => {
+    chipsEl.innerHTML = list.map((c) => `<button type="button" data-chat-chip="${esc(c)}">${esc(c)}</button>`).join('');
+  };
+
+  const renderMessage = (m) => {
+    const wrap = document.createElement('div');
+    wrap.className = `chat-msg ${m.role === 'user' ? 'user' : 'bot'}`;
+    let html = `<div class="chat-bubble">${m.role === 'user' ? esc(m.text) : formatBotMarkdown(m.reply || '')}</div>`;
+
+    if (m.coupons?.length) {
+      html += `<div class="chat-coupons">${m.coupons.map((c) => `<button type="button" data-chat-coupon="${esc(c)}">🏷️ Apply ${esc(c)}</button>`).join('')}</div>`;
+    }
+    if (m.order) {
+      html += `<div class="chat-cards"><a class="chat-prod" href="#/order/${esc(m.order.id)}" style="grid-template-columns:1fr auto"><div><b>Order #${esc(m.order.id)}</b><div class="cp-meta">Status: ${esc(m.order.status.toUpperCase())} · ${money(m.order.total)}</div></div><span class="btn btn-sm">Receipt →</span></a></div>`;
+    }
+    if (m.products?.length) {
+      html += `<div class="chat-cards">${m.products.map((p) => `
+        <div class="chat-prod">
+          <a href="#/product/${esc(p.id)}"><img src="${esc(p.image)}" alt="" data-cat="${esc(p.category || '')}"></a>
+          <div>
+            <a href="#/product/${esc(p.id)}"><b>${esc(p.title)}</b></a>
+            <div class="cp-meta">${money(p.price)} <span style="text-decoration:line-through">${money(p.mrp)}</span> · ${p.rating}★</div>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" data-chat-buy="${esc(p.id)}" style="height:32px;padding:0 11px;font-size:.76rem">View</button>
+        </div>`).join('')}</div>`;
+    }
+    wrap.innerHTML = html;
+    msgsEl.appendChild(wrap);
+  };
+
+  const paintAll = () => {
+    msgsEl.innerHTML = '';
+    history.forEach(renderMessage);
+    const lastBot = [...history].reverse().find((x) => x.role === 'bot');
+    setChips(lastBot?.suggestions || DEFAULT_CHIPS);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+  };
+
+  const toggleChat = (force) => {
+    const open = force !== undefined ? force : !widget.classList.contains('open');
+    widget.classList.toggle('open', open);
+    fab.classList.toggle('open', open);
+    widget.setAttribute('aria-hidden', String(!open));
+    if (open) {
+      paintAll();
+      setTimeout(() => input.focus(), 120);
+    }
+  };
+
+  fab.addEventListener('click', () => toggleChat());
+  $('#chatClose')?.addEventListener('click', () => toggleChat(false));
+  $('#chatReset')?.addEventListener('click', () => {
+    history = [welcomeMsg()];
+    store.set('chatHistory', history);
+    paintAll();
+    toast('Chat conversation reset');
+  });
+
+  const sendQuery = async (text) => {
+    const clean = String(text || '').trim();
+    if (!clean) return;
+
+    // Quick client-side navigation shortcuts
+    if (/^view my orders$/i.test(clean)) { location.hash = '#/account'; }
+    if (/^sign in to my account$/i.test(clean)) { location.hash = '#/account'; }
+    if (/^go to checkout$/i.test(clean)) { location.hash = '#/checkout'; }
+
+    const userMsg = { role: 'user', text: clean };
+    history.push(userMsg);
+    renderMessage(userMsg);
+    input.value = '';
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+
+    // Typing indicator
+    const typing = document.createElement('div');
+    typing.className = 'chat-msg bot';
+    typing.innerHTML = '<div class="chat-bubble"><span class="typing-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(typing);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+
+    const { parts } = parseHash();
+    const context = {
+      route: parts[0] || 'home',
+      productId: parts[0] === 'product' ? parts[1] : null,
+      cartSubtotal: cartSubtotal(),
+      cartCount: cartCount(),
+    };
+
+    try {
+      const res = await api('/support/chat', { method: 'POST', body: { message: clean, context } });
+      typing.remove();
+      const botMsg = { role: 'bot', ...res };
+      history.push(botMsg);
+      if (history.length > 30) history = history.slice(-30);
+      store.set('chatHistory', history);
+      renderMessage(botMsg);
+      setChips(res.suggestions || DEFAULT_CHIPS);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } catch (err) {
+      typing.remove();
+      const errMsg = { role: 'bot', reply: `Sorry, I ran into an issue: ${err.message}. You can also reach us 24/7 at **support@lumen.store**.` };
+      history.push(errMsg);
+      renderMessage(errMsg);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    }
+  };
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    sendQuery(input.value);
+  });
+
+  chipsEl.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-chat-chip]');
+    if (!b) return;
+    const label = b.dataset.chatChip;
+    if (/^apply freeship coupon$/i.test(label)) {
+      state.coupon = 'FREESHIP';
+      store.set('coupon', 'FREESHIP');
+      toast('Coupon FREESHIP saved for your cart! 🎉');
+      return;
+    }
+    sendQuery(label);
+  });
+
+  msgsEl.addEventListener('click', (e) => {
+    const cBtn = e.target.closest('[data-chat-coupon]');
+    if (cBtn) {
+      const code = cBtn.dataset.chatCoupon;
+      state.coupon = code;
+      store.set('coupon', code);
+      toast(`Coupon ${code} applied to your cart! 🎉`, { action: { href: '#/cart', label: 'View cart' } });
+      if (location.hash.startsWith('#/cart') || location.hash.startsWith('#/checkout')) router();
+      return;
+    }
+    const pBtn = e.target.closest('[data-chat-buy]');
+    if (pBtn) {
+      location.hash = '#/product/' + pBtn.dataset.chatBuy;
+    }
+  });
+}
+
 // ---------- Boot ----------
 async function boot() {
   initHeader();
+  initChatbot();
   updateBadges();
   renderDrawer();
   try { state.categories = await api('/categories'); } catch { state.categories = []; }

@@ -834,6 +834,172 @@ async function handleApi(req, res, url) {
     return send(res, 200, order);
   }
 
+  if (method === 'POST' && p === '/api/support/chat') {
+    const user = currentUser(req);
+    const { message, context } = await readBody(req);
+    const raw = String(message || '').trim();
+    if (!raw) throw httpError(400, 'Message is required');
+    const qLower = raw.toLowerCase();
+    const live = activeProducts();
+    const fmtInr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
+
+    // 1. Order lookup / tracking / cancellation intent
+    const orderIdMatch = /\blmn[a-z0-9]{6,16}\b/i.exec(raw);
+    if (orderIdMatch || /\b(track|where is my order|order status|my order|recent order|cancel order)\b/i.test(qLower)) {
+      let targetOrder = null;
+      if (orderIdMatch) {
+        const oid = orderIdMatch[0].toUpperCase();
+        targetOrder = db.orders.find((o) => o.id === oid && (!o.userId || (user && o.userId === user.id)));
+      } else if (user) {
+        const userOrders = db.orders.filter((o) => o.userId === user.id);
+        targetOrder = userOrders[userOrders.length - 1] || null;
+      }
+      if (targetOrder) {
+        const est = new Date(targetOrder.estimatedDelivery).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+        const itemSummary = targetOrder.items.map((i) => `${i.title} (×${i.qty})`).join(', ');
+        return send(res, 200, {
+          reply: `Order **${targetOrder.id}** is currently **${targetOrder.status.toUpperCase()}**.\n• **Items:** ${itemSummary}\n• **Total:** ${fmtInr(targetOrder.total)} (${targetOrder.payment.method.toUpperCase()} · ${targetOrder.payment.status})\n• **Estimated delivery:** ${est}`,
+          order: { id: targetOrder.id, status: targetOrder.status, total: targetOrder.total, estimatedDelivery: targetOrder.estimatedDelivery },
+          suggestions: ['View my orders', 'Return & refund policy', 'Show today\'s deals'],
+        });
+      }
+      return send(res, 200, {
+        reply: user
+          ? 'I couldn\'t find an active order under your account yet. If you placed a guest order, paste your Order ID (for example `LMN...`) and I\'ll look it up right away!'
+          : 'Please **sign in** to view your account orders automatically, or paste your Order ID (starts with `LMN...`) here so I can track it for you.',
+        suggestions: ['Sign in to my account', 'Show bestsellers', 'Payment options'],
+      });
+    }
+
+    // 2. Coupons / discounts / promo codes
+    if (/\b(coupon|promo|discount|code|offer|voucher)\b/i.test(qLower)) {
+      const sub = Number(context?.cartSubtotal) || 0;
+      const bestTip = sub >= 4999
+        ? 'Since your cart is over ₹4,999, **FLAT500** or **WELCOME10** will give you the biggest savings!'
+        : sub > 0
+          ? `Your cart is at ${fmtInr(sub)} — apply **WELCOME10** right now for 10% off!`
+          : 'You can apply any of these with one click below:';
+      return send(res, 200, {
+        reply: `Here are our active promo codes:\n• **WELCOME10** — 10% off your order (up to ₹1,000)\n• **FLAT500** — Flat ₹500 off on orders ₹4,999+\n• **FREESHIP** — Free delivery on any order\n\n${bestTip}`,
+        coupons: ['WELCOME10', 'FLAT500', 'FREESHIP'],
+        suggestions: ['Show today\'s deals', 'Under ₹2,500 gifts', 'Shipping policy'],
+      });
+    }
+
+    // 3. Payment, UPI, NetBanking, EMI
+    if (/\b(upi|gpay|phonepe|paytm|netbanking|bank|emi|payment|cod|cash on delivery|card|3d secure)\b/i.test(qLower)) {
+      return send(res, 200, {
+        reply: 'We support all major Indian payment methods at checkout:\n• **UPI 2.0 (Zero fee):** Scan Dynamic UPI QR, one-tap Google Pay / PhonePe / Paytm / BHIM, or live VPA verification (`name@okicici`)\n• **Cards (3D Secure 2.0):** Visa, Mastercard, RuPay & Amex with 6-digit OTP verification\n• **NetBanking:** HDFC, ICICI, SBI, Axis, Kotak, IDFC FIRST, PNB, BOB & 40+ banks\n• **No-Cost Bank EMI:** 3 & 6 months at 0% interest (orders ₹3,000+)\n• **Cash / UPI on Delivery:** Available up to ₹50,000',
+        suggestions: ['Active coupon codes', 'Go to checkout', 'Shipping & delivery time'],
+      });
+    }
+
+    // 4. Shipping / delivery / PIN code
+    if (/\b(ship|delivery|deliver|pin ?code|how long|dispatch|free shipping)\b/i.test(qLower)) {
+      return send(res, 200, {
+        reply: '🚚 **Shipping & Delivery:**\n• **Free Standard Shipping** on all orders over **₹999** (arrives in 3–5 business days; ₹79 below ₹999)\n• **Express Delivery (₹149):** Arrives in 1–2 business days across major cities\n• You can also use coupon **FREESHIP** for free shipping on any order, or check your exact 6-digit PIN code on any product page.',
+        suggestions: ['Apply FREESHIP coupon', 'Return policy', 'Track my order'],
+      });
+    }
+
+    // 5. Returns / refunds / warranty / exchange
+    if (/\b(return|refund|replace|exchange|warranty|damaged|broken)\b/i.test(qLower)) {
+      return send(res, 200, {
+        reply: '↩️ **10-Day Hassle-Free Returns & Warranty:**\n• Return any unused item in its original packaging within **10 days of delivery** for a 100% refund.\n• Refunds are credited back to your original payment method (UPI / Card / Bank) within **3–5 business days**.\n• All electronics & watches include a 1–2 year brand warranty.',
+        suggestions: ['Track my order', 'Contact human support', 'Show bestsellers'],
+      });
+    }
+
+    // 6. Contact / human support escalation
+    if (/\b(human|agent|person|phone|call|email|contact|complaint|escalate|talk to)\b/i.test(qLower)) {
+      return send(res, 200, {
+        reply: '💬 **Priority Human Support (24/7):**\n• **Email:** support@lumen.store\n• **Toll-Free Helpline:** 1800-123-4567 (9 AM – 11 PM IST)\n• **WhatsApp Desk:** +91 98765 43210\n\nShare your Order ID or question here and I can also prepare a summary for our support team.',
+        suggestions: ['Track my order', 'Return & refund policy', 'Active coupon codes'],
+      });
+    }
+
+    // 7. Current product page context Q&A ("tell me about this product", "is it in stock", "warranty")
+    if (context?.productId && /\b(this|it|stock|available|spec|feature|good|worth|detail)\b/i.test(qLower)) {
+      const cur = findProduct(context.productId);
+      if (cur && !cur.hidden) {
+        const off = Math.round(((cur.mrp - cur.price) / cur.mrp) * 100);
+        const specs = Object.entries(cur.specs || {}).map(([k, v]) => `${k}: ${v}`).join(' · ');
+        return send(res, 200, {
+          reply: `You're viewing **${cur.title}** by **${cur.brand}**:\n• **Price:** ${fmtInr(cur.price)} (MRP ${fmtInr(cur.mrp)}, **${off}% off**)\n• **Rating:** ${cur.rating} ★ (${cur.reviews.toLocaleString('en-IN')} reviews)\n• **Stock:** ${cur.stock > 0 ? `${cur.stock} units ready to ship` : 'Currently out of stock'}\n• **Highlights:** ${(cur.features || []).slice(0, 3).join('; ')}${specs ? `\n• **Specs:** ${specs}` : ''}`,
+          products: [cur].map((x) => ({ id: x.id, title: x.title, brand: x.brand, price: x.price, mrp: x.mrp, rating: x.rating, image: x.images[0], category: x.category })),
+          suggestions: ['Any coupon codes?', 'Shipping & delivery time', 'Similar products'],
+        });
+      }
+    }
+
+    // 8. Smart product discovery & price-filtered search
+    let maxBudget = Infinity;
+    const underMatch = /\b(?:under|below|less than|budget|upto|up to|max)\s*₹?\s*(\d[\d,]*)/i.exec(qLower);
+    if (underMatch) maxBudget = Number(underMatch[1].replace(/,/g, '')) || Infinity;
+
+    const catAliases = {
+      electronics: ['electronic', 'headphone', 'earbud', 'audio', 'speaker', 'laptop', 'phone', 'smartphone', 'camera', 'keyboard', 'smartwatch', 'tech', 'gadget'],
+      fashion: ['fashion', 'shoe', 'sneaker', 'jacket', 'tee', 't-shirt', 'shirt', 'hoodie', 'bag', 'tote', 'wear', 'cloth'],
+      home: ['home', 'chair', 'lamp', 'planter', 'mug', 'decor', 'furniture', 'living', 'desk'],
+      beauty: ['beauty', 'perfume', 'fragrance', 'skincare', 'lipstick', 'makeup', 'cosmetic', 'glow'],
+      sports: ['sport', 'fitness', 'yoga', 'gym', 'dumbbell', 'bottle', 'workout'],
+      accessories: ['accessory', 'accessories', 'watch', 'sunglass', 'backpack', 'travel'],
+    };
+    let matchedCat = null;
+    for (const [cid, words] of Object.entries(catAliases)) {
+      if (words.some((w) => qLower.includes(w))) { matchedCat = cid; break; }
+    }
+
+    const stopWords = new Set(['show', 'find', 'recommend', 'suggest', 'best', 'good', 'some', 'want', 'need', 'looking', 'for', 'the', 'with', 'under', 'below', 'me', 'a', 'an', 'in', 'on', 'to', 'of', 'and', 'or', 'is', 'are', 'can', 'you', 'please', 'have', 'any', 'what', 'which', 'gift', 'gifts', 'product', 'products', 'item', 'items', 'buy', 'shop', 'deal', 'deals', 'new', 'top', 'cheap', 'budget']);
+    const tokens = qLower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length >= 2 && !stopWords.has(w) && !/^\d+$/.test(w));
+
+    let candidates = live.filter((x) => x.price <= maxBudget && x.stock > 0);
+    if (/\b(deal|sale|discount)\b/i.test(qLower)) {
+      candidates = candidates.filter((x) => x.tags.includes('deal') || (x.mrp - x.price) / x.mrp >= 0.3);
+    } else if (/\b(new|latest)\b/i.test(qLower)) {
+      candidates = candidates.filter((x) => x.tags.includes('new'));
+    }
+
+    const scored = candidates.map((x) => {
+      const hay = [x.title, x.brand, x.category, x.description, ...(x.features || [])].join(' ').toLowerCase();
+      let score = 0;
+      if (matchedCat && x.category === matchedCat) score += 4;
+      for (const tok of tokens) {
+        if (x.title.toLowerCase().includes(tok)) score += 6;
+        else if (hay.includes(tok)) score += 3;
+      }
+      if (x.tags.includes('bestseller')) score += 1.5;
+      score += x.rating * 0.3;
+      return { x, score };
+    });
+
+    let picks = scored.filter((s) => s.score > 2.5).sort((a, b) => b.score - a.score).slice(0, 4).map((s) => s.x);
+    if (!picks.length && (maxBudget < Infinity || matchedCat || /\b(recommend|suggest|best|top|deal|gift|popular|bestseller)\b/i.test(qLower))) {
+      picks = candidates
+        .filter((x) => !matchedCat || x.category === matchedCat)
+        .sort((a, b) => b.rating * b.reviews - a.rating * a.reviews)
+        .slice(0, 4);
+    }
+
+    if (picks.length) {
+      const budgetNote = maxBudget < Infinity ? ` under **${fmtInr(maxBudget)}**` : '';
+      const catName = matchedCat ? db.categories.find((c) => c.id === matchedCat)?.name : '';
+      return send(res, 200, {
+        reply: `Here are our top ${catName ? `**${catName}** ` : ''}recommendations${budgetNote} (${picks.length} in stock right now). You can view details or add any of them directly to your cart:`,
+        products: picks.map((x) => ({ id: x.id, title: x.title, brand: x.brand, price: x.price, mrp: x.mrp, rating: x.rating, image: x.images[0], category: x.category })),
+        suggestions: ['Active coupon codes', 'Under ₹2,000 picks', 'Payment & UPI options'],
+      });
+    }
+
+    // 9. Greeting / general assistant fallback
+    const topPicks = live.filter((x) => x.tags.includes('bestseller')).slice(0, 3);
+    return send(res, 200, {
+      reply: `Hi${user ? ' ' + user.name.split(' ')[0] : ''}! I'm **Lumen AI**, your 24/7 shopping & support assistant. I can help you:\n• **Find products** (e.g. *"wireless headphones"*, *"gifts under ₹2500"*, *"running shoes"*)\n• **Track or cancel orders** (paste your ` + '`LMN...`' + ` Order ID)\n• **Apply coupons** (**WELCOME10**, **FLAT500**, **FREESHIP**)\n• Answer **UPI, NetBanking, EMI, shipping & return** questions.`,
+      products: topPicks.map((x) => ({ id: x.id, title: x.title, brand: x.brand, price: x.price, mrp: x.mrp, rating: x.rating, image: x.images[0], category: x.category })),
+      suggestions: ['Show bestsellers', 'Gifts under ₹2,500', 'Active coupon codes', 'Track my order'],
+    });
+  }
+
   throw httpError(404, 'API route not found');
 }
 
