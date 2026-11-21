@@ -4,6 +4,7 @@
 // data/catalog.js is only used to seed the database the first time the server starts.
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -17,6 +18,58 @@ const UPLOAD_DIR = IS_SERVERLESS ? path.join(os.tmpdir(), 'lumen-uploads') : pat
 const DB_FILE = IS_SERVERLESS ? path.join(os.tmpdir(), 'lumen-db.json') : path.join(__dirname, 'data', 'db.json');
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const ADMIN_SESSION_TTL = 12 * 60 * 60 * 1000; // 12 hours
+const RZP_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
+const RZP_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'lumen_rzp_demo_secret_2026';
+
+function razorpayCreateOrder({ amountPaise, receipt }) {
+  if (!RZP_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+    // Self-contained Razorpay simulation mode (works out of the box without external keys)
+    return Promise.resolve({
+      id: 'order_' + crypto.randomBytes(7).toString('hex'),
+      amount: amountPaise,
+      currency: 'INR',
+      receipt,
+      keyId: RZP_KEY_ID || 'rzp_test_LumenDemoKey',
+      mode: 'demo',
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({ amount: amountPaise, currency: 'INR', receipt, payment_capture: 1 });
+    const auth = Buffer.from(`${RZP_KEY_ID}:${RZP_KEY_SECRET}`).toString('base64');
+    const req = https.request({
+      hostname: 'api.razorpay.com',
+      path: '/v1/orders',
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    }, (res) => {
+      let raw = '';
+      res.on('data', (c) => { raw += c; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(raw || '{}');
+          if (res.statusCode >= 200 && res.statusCode < 300 && parsed.id) {
+            resolve({ id: parsed.id, amount: parsed.amount, currency: parsed.currency || 'INR', receipt, keyId: RZP_KEY_ID, mode: 'live' });
+          } else {
+            reject(httpError(502, parsed.error?.description || 'Razorpay order creation failed'));
+          }
+        } catch {
+          reject(httpError(502, 'Invalid response from Razorpay API'));
+        }
+      });
+    });
+    req.on('error', (err) => reject(httpError(502, 'Razorpay connection error: ' + err.message)));
+    req.write(payload);
+    req.end();
+  });
+}
+
+function rzpSign(orderId, paymentId) {
+  return crypto.createHmac('sha256', RZP_KEY_SECRET).update(`${orderId}|${paymentId}`).digest('hex');
+}
 
 // ---------------------------------------------------------------------------
 // Persistence
@@ -711,6 +764,32 @@ async function handleApi(req, res, url) {
     return send(res, 200, { verified: true, vpa, holder, bank });
   }
 
+  if (method === 'POST' && p === '/api/payments/razorpay/order') {
+    const { items, coupon, shippingMethod } = await readBody(req);
+    const quote = priceCart(items, coupon, shippingMethod);
+    const receipt = 'rcpt_' + Date.now().toString(36);
+    const rzpOrder = await razorpayCreateOrder({ amountPaise: quote.total * 100, receipt });
+    db.rzpOrders ??= {};
+    db.rzpOrders[rzpOrder.id] = { amount: quote.total * 100, total: quote.total, created: Date.now(), mode: rzpOrder.mode };
+    saveDb();
+    return send(res, 200, { ...rzpOrder, totalInr: quote.total });
+  }
+
+  if (method === 'POST' && p === '/api/payments/razorpay/demo-sign') {
+    const { razorpay_order_id, subMethod, meta } = await readBody(req);
+    const entry = db.rzpOrders?.[razorpay_order_id];
+    if (!entry) throw httpError(400, 'Unknown or expired Razorpay order');
+    const razorpay_payment_id = 'pay_' + crypto.randomBytes(7).toString('hex');
+    const razorpay_signature = rzpSign(razorpay_order_id, razorpay_payment_id);
+    return send(res, 200, {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      subMethod: str(subMethod || 'UPI', 30),
+      meta: str(meta || '', 60),
+    });
+  }
+
   if (method === 'POST' && p === '/api/orders') {
     const user = currentUser(req);
     const { items, coupon, shippingMethod, address, payment } = await readBody(req);
@@ -723,7 +802,7 @@ async function handleApi(req, res, url) {
     const email = user ? user.email : String(a.email || '').toLowerCase();
     if (!isEmail(email)) throw httpError(400, 'A valid email is required');
     const methodName = payment?.method;
-    if (!['card', 'upi', 'netbanking', 'emi', 'cod'].includes(methodName)) throw httpError(400, 'Choose a valid payment method');
+    if (!['razorpay', 'card', 'upi', 'netbanking', 'emi', 'cod'].includes(methodName)) throw httpError(400, 'Choose a valid payment method');
 
     const quote = priceCart(items, coupon, shippingMethod);
     if (methodName === 'cod' && quote.total > 50000) throw httpError(400, 'Cash on Delivery is available for orders up to ₹50,000');
@@ -731,7 +810,24 @@ async function handleApi(req, res, url) {
 
     // Simulated payment gateway processing - never store raw card numbers or PINs.
     const txnId = 'TXN' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(3).toString('hex').toUpperCase();
-    const paymentInfo = { method: methodName, status: methodName === 'cod' ? 'pending' : 'paid', txnId, gateway: 'LumenPay 3DS2' };
+    const paymentInfo = { method: methodName, status: methodName === 'cod' ? 'pending' : 'paid', txnId, gateway: methodName === 'razorpay' ? 'Razorpay' : 'LumenPay 3DS2' };
+
+    if (methodName === 'razorpay') {
+      const ordId = String(payment.razorpay_order_id || '');
+      const payId = String(payment.razorpay_payment_id || '');
+      const sig = String(payment.razorpay_signature || '');
+      if (!ordId || !payId || !sig) throw httpError(400, 'Missing Razorpay payment verification parameters');
+      const expected = rzpSign(ordId, payId);
+      if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+        throw httpError(400, 'Razorpay payment signature verification failed');
+      }
+      paymentInfo.rzpOrderId = ordId;
+      paymentInfo.rzpPaymentId = payId;
+      paymentInfo.txnId = payId;
+      paymentInfo.subMethod = str(payment.subMethod || 'Razorpay Checkout', 40);
+      if (payment.meta) paymentInfo.meta = str(payment.meta, 60);
+      delete db.rzpOrders?.[ordId];
+    }
 
     if (methodName === 'card') {
       const num = String(payment.cardNumber || '').replace(/\s/g, '');
@@ -886,10 +982,10 @@ async function handleApi(req, res, url) {
       });
     }
 
-    // 3. Payment, UPI, NetBanking, EMI
-    if (/\b(upi|gpay|phonepe|paytm|netbanking|bank|emi|payment|cod|cash on delivery|card|3d secure)\b/i.test(qLower)) {
+    // 3. Payment, Razorpay, UPI, NetBanking, EMI
+    if (/\b(razorpay|upi|gpay|phonepe|paytm|netbanking|bank|emi|payment|cod|cash on delivery|card|3d secure|wallet)\b/i.test(qLower)) {
       return send(res, 200, {
-        reply: 'We support all major Indian payment methods at checkout:\n• **UPI 2.0 (Zero fee):** Scan Dynamic UPI QR, one-tap Google Pay / PhonePe / Paytm / BHIM, or live VPA verification (`name@okicici`)\n• **Cards (3D Secure 2.0):** Visa, Mastercard, RuPay & Amex with 6-digit OTP verification\n• **NetBanking:** HDFC, ICICI, SBI, Axis, Kotak, IDFC FIRST, PNB, BOB & 40+ banks\n• **No-Cost Bank EMI:** 3 & 6 months at 0% interest (orders ₹3,000+)\n• **Cash / UPI on Delivery:** Available up to ₹50,000',
+        reply: 'We support **Razorpay Checkout** and all major Indian payment methods:\n• **Razorpay Gateway (Recommended):** Official Razorpay order creation (`order_...`) + HMAC-SHA256 signature verification supporting UPI QR, Cards, NetBanking & Wallets\n• **UPI 2.0 (Zero fee):** Scan Dynamic UPI QR, one-tap Google Pay / PhonePe / Paytm / BHIM, or live VPA verification (`name@okicici`)\n• **Cards (3D Secure 2.0):** Visa, Mastercard, RuPay & Amex with 6-digit OTP verification\n• **NetBanking:** HDFC, ICICI, SBI, Axis, Kotak, IDFC FIRST, PNB, BOB & 40+ banks\n• **No-Cost Bank EMI:** 3 & 6 months at 0% interest (orders ₹3,000+)\n• **Cash / UPI on Delivery:** Available up to ₹50,000',
         suggestions: ['Active coupon codes', 'Go to checkout', 'Shipping & delivery time'],
       });
     }

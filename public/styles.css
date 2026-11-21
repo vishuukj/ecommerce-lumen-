@@ -552,6 +552,22 @@ textarea.input { height: auto; padding: 12px 14px; resize: vertical; }
 .otp-inputs input { width: 44px; height: 52px; text-align: center; font-size: 1.25rem; font-weight: 800; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface-2); outline: none; }
 .otp-inputs input:focus { border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent); }
 
+/* Razorpay Checkout Popup */
+.rzp-modal { max-width: 420px; margin: 0 auto; overflow: hidden; border-radius: 18px; }
+.rzp-header { background: linear-gradient(135deg, #072654 0%, #0d47a1 60%, #1976d2 100%); color: #fff; padding: 20px 22px; display: flex; align-items: center; gap: 14px; }
+.rzp-logo { width: 44px; height: 44px; border-radius: 12px; background: rgba(255,255,255,.16); display: grid; place-items: center; font-weight: 900; font-size: 1.25rem; border: 1px solid rgba(255,255,255,.25); }
+.rzp-header .rzp-amt { margin-left: auto; text-align: right; }
+.rzp-header .rzp-amt b { display: block; font-size: 1.25rem; }
+.rzp-header .rzp-amt span { font-size: .72rem; opacity: .82; }
+.rzp-bar { background: #0a2e65; color: #c7dcff; font-size: .78rem; padding: 8px 22px; display: flex; justify-content: space-between; align-items: center; }
+.rzp-body { padding: 18px 22px 22px; }
+.rzp-methods { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 14px; }
+.rzp-methods button { border: 1.5px solid var(--border); background: var(--surface-2); border-radius: 10px; padding: 8px 4px; font-size: .75rem; font-weight: 700; color: var(--muted); transition: .18s; }
+.rzp-methods button.active { border-color: #1976d2; background: color-mix(in srgb, #1976d2 12%, var(--surface)); color: var(--text); }
+.rzp-pay-btn { width: 100%; height: 48px; border: 0; border-radius: 12px; background: linear-gradient(135deg, #0d47a1, #1976d2); color: #fff; font-weight: 800; font-size: .95rem; margin-top: 14px; box-shadow: 0 8px 20px rgba(25, 118, 210, .35); }
+.rzp-pay-btn:hover { filter: brightness(1.06); }
+.rzp-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, #1976d2 14%, transparent); color: #1976d2; font-weight: 800; font-size: .72rem; }
+
 /* Auth & Account enhancements */
 .pw-meter { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 4px; }
 .pw-meter i { height: 4px; border-radius: 4px; background: var(--border); transition: .25s; }

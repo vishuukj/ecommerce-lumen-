@@ -1175,6 +1175,166 @@ function authorizeGatewayModal({ title, subtitle, badge, amount, mode = 'otp' })
   });
 }
 
+function loadRazorpaySdk() {
+  if (window.Razorpay) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const s = document.createElement('script');
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    s.onload = () => resolve(!!window.Razorpay);
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+}
+
+// Launch Razorpay Checkout (Live SDK if RAZORPAY_KEY_ID is configured, or interactive Razorpay popup in demo mode)
+async function launchRazorpayCheckout({ rzpOrder, address }) {
+  if (rzpOrder.mode === 'live') {
+    const sdkOk = await loadRazorpaySdk();
+    if (sdkOk) {
+      return new Promise((resolve) => {
+        const rzp = new window.Razorpay({
+          key: rzpOrder.keyId,
+          amount: rzpOrder.amount,
+          currency: rzpOrder.currency || 'INR',
+          name: 'Lumen Retail Pvt. Ltd.',
+          description: 'Order Checkout',
+          order_id: rzpOrder.id,
+          prefill: { name: address.name, email: address.email, contact: address.phone },
+          theme: { color: '#1976d2' },
+          handler: (resp) => resolve({
+            razorpay_order_id: resp.razorpay_order_id,
+            razorpay_payment_id: resp.razorpay_payment_id,
+            razorpay_signature: resp.razorpay_signature,
+            subMethod: 'Razorpay Live',
+          }),
+          modal: { ondismiss: () => resolve(null) },
+        });
+        rzp.open();
+      });
+    }
+  }
+
+  // Self-contained Razorpay Standard Checkout popup (HMAC-SHA256 signed by server)
+  return new Promise((resolve) => {
+    let tab = 'UPI';
+    let selMeta = 'Google Pay (UPI)';
+    const amtInr = rzpOrder.totalInr || Math.round(rzpOrder.amount / 100);
+    const upiUri = `upi://pay?pa=lumenrazorpay@icici&pn=Lumen%20Retail&am=${amtInr}&cu=INR`;
+
+    const renderBody = () => {
+      const box = $('#rzpTabBody');
+      if (!box) return;
+      if (tab === 'UPI') {
+        box.innerHTML = `
+          <div style="display:grid;grid-template-columns:116px 1fr;gap:14px;align-items:center;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2)">
+            <div style="width:116px;height:116px;background:#fff;padding:8px;border-radius:10px">${upiQrSvg(upiUri)}</div>
+            <div>
+              <b style="font-size:.88rem;display:block">Scan QR with any UPI App</b>
+              <span class="muted" style="font-size:.76rem;display:block;margin:4px 0 8px">GPay · PhonePe · Paytm · BHIM</span>
+              <input class="input" id="rzpVpa" placeholder="or enter VPA: name@okicici" style="height:36px;font-size:.82rem" value="customer@okicici">
+            </div>
+          </div>`;
+        selMeta = 'UPI QR / VPA';
+      } else if (tab === 'Card') {
+        box.innerHTML = `
+          <div class="form-stack" style="gap:10px">
+            <input class="input" id="rzpCardNum" value="4242 4242 4242 4242" placeholder="Card Number" style="height:40px">
+            <div class="grid-2">
+              <input class="input" value="12/29" placeholder="MM/YY" style="height:40px">
+              <input class="input" type="password" value="123" placeholder="CVV" style="height:40px">
+            </div>
+            <span class="muted" style="font-size:.75rem">Pre-filled with Razorpay test Visa card (4242 •••• 4242)</span>
+          </div>`;
+        selMeta = 'Visa •••• 4242';
+      } else if (tab === 'NetBanking') {
+        box.innerHTML = `
+          <div class="bank-grid" style="margin-bottom:0">
+            ${TOP_BANKS.map((b, i) => `
+              <button type="button" class="bank-tile ${i === 0 ? 'active' : ''}" data-rzpbank="${esc(b.name)}" style="padding:9px">
+                <span class="bank-logo" style="background:${b.color};width:26px;height:26px;font-size:.65rem">${b.code}</span>
+                <span style="font-size:.78rem">${esc(b.name)}</span>
+              </button>`).join('')}
+          </div>`;
+        selMeta = TOP_BANKS[0].name;
+        $$('[data-rzpbank]', box).forEach((b) => b.addEventListener('click', () => {
+          selMeta = b.dataset.rzpbank;
+          $$('[data-rzpbank]', box).forEach((x) => x.classList.toggle('active', x === b));
+        }));
+      } else if (tab === 'Wallet') {
+        box.innerHTML = `
+          <div class="grid-2">
+            ${['Paytm Wallet', 'Amazon Pay', 'PhonePe Wallet', 'Mobikwik'].map((w, i) => `
+              <button type="button" class="bank-tile ${i === 0 ? 'active' : ''}" data-rzpwallet="${w}" style="padding:10px">
+                <span>👛 ${w}</span>
+              </button>`).join('')}
+          </div>`;
+        selMeta = 'Paytm Wallet';
+        $$('[data-rzpwallet]', box).forEach((b) => b.addEventListener('click', () => {
+          selMeta = b.dataset.rzpwallet;
+          $$('[data-rzpwallet]', box).forEach((x) => x.classList.toggle('active', x === b));
+        }));
+      }
+    };
+
+    openModal(`
+      <div class="rzp-modal">
+        <div class="rzp-header">
+          <div class="rzp-logo">R</div>
+          <div>
+            <b style="font-size:1.05rem;display:block">Lumen Retail Pvt. Ltd.</b>
+            <span style="font-size:.75rem;opacity:.85">Razorpay Trusted Business · ${esc(rzpOrder.id)}</span>
+          </div>
+          <div class="rzp-amt">
+            <span>Amount</span>
+            <b>${money(amtInr)}</b>
+          </div>
+        </div>
+        <div class="rzp-bar">
+          <span>👤 +91 ${esc(address.phone || '9876543210')} · ${esc(address.email || '')}</span>
+          <span>🔒 100% Secure</span>
+        </div>
+        <div class="rzp-body">
+          <div class="rzp-methods" id="rzpMethods">
+            ${[['UPI', '📱 UPI'], ['Card', '💳 Card'], ['NetBanking', '🏦 Bank'], ['Wallet', '👛 Wallet']].map(([k, l]) => `<button type="button" class="${k === tab ? 'active' : ''}" data-rzptab="${k}">${l}</button>`).join('')}
+          </div>
+          <div id="rzpTabBody"></div>
+          <button type="button" class="rzp-pay-btn" id="rzpPayNow">Pay ${money(amtInr)} via Razorpay</button>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:.74rem;color:var(--muted)">
+            <span>Secured by <b>Razorpay</b> · HMAC-SHA256</span>
+            <button type="button" class="link-btn" id="rzpCancel">Cancel</button>
+          </div>
+        </div>
+      </div>`);
+
+    renderBody();
+    $$('#rzpMethods button').forEach((b) => b.addEventListener('click', () => {
+      tab = b.dataset.rzptab;
+      $$('#rzpMethods button').forEach((x) => x.classList.toggle('active', x === b));
+      renderBody();
+    }));
+
+    $('#rzpCancel')?.addEventListener('click', () => { closeModal(); resolve(null); });
+    $('#rzpPayNow')?.addEventListener('click', async () => {
+      const btn = $('#rzpPayNow');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Verifying Signature with Razorpay…';
+      if (tab === 'UPI' && $('#rzpVpa')?.value) selMeta = $('#rzpVpa').value.trim();
+      try {
+        const signed = await api('/payments/razorpay/demo-sign', {
+          method: 'POST',
+          body: { razorpay_order_id: rzpOrder.id, subMethod: tab, meta: selMeta },
+        });
+        closeModal();
+        resolve(signed);
+      } catch (err) {
+        toast(err.message, { type: 'error' });
+        btn.disabled = false;
+        btn.textContent = `Pay ${money(amtInr)} via Razorpay`;
+      }
+    });
+  });
+}
+
 async function renderCheckout() {
   setTitle('Checkout');
   const app = $('#app');
@@ -1187,7 +1347,7 @@ async function renderCheckout() {
     step: 1,
     address: { name: state.user?.name || '', phone: state.user?.phone || '', email: state.user?.email || '', ...defaultAddr },
     shipping: 'standard',
-    payment: 'upi',
+    payment: 'razorpay',
     upiMode: 'qr',
     upiApp: 'Google Pay',
     upiVerified: null,
@@ -1266,9 +1426,10 @@ async function renderCheckout() {
     3: () => `
       <div class="panel">
         <h3>💳 Payment method</h3>
-        <label class="option-card ${co.payment === 'upi' ? 'active' : ''}"><input type="radio" name="pay" value="upi" ${co.payment === 'upi' ? 'checked' : ''}><div class="oc-body"><b>UPI (Instant · Zero Fee)</b><span>Scan Dynamic QR, Google Pay, PhonePe, Paytm, BHIM VPA</span></div>📱</label>
+        <label class="option-card ${co.payment === 'razorpay' ? 'active' : ''}"><input type="radio" name="pay" value="razorpay" ${co.payment === 'razorpay' ? 'checked' : ''}><div class="oc-body"><b>Razorpay Checkout <span class="rzp-badge">RECOMMENDED</span></b><span>Pay with UPI QR, GPay, PhonePe, Cards, NetBanking &amp; Wallets</span></div>⚡</label>
+        <label class="option-card ${co.payment === 'upi' ? 'active' : ''}"><input type="radio" name="pay" value="upi" ${co.payment === 'upi' ? 'checked' : ''}><div class="oc-body"><b>UPI Direct (Instant · Zero Fee)</b><span>Scan Dynamic QR, Google Pay, PhonePe, Paytm, BHIM VPA</span></div>📱</label>
         <label class="option-card ${co.payment === 'card' ? 'active' : ''}"><input type="radio" name="pay" value="card" ${co.payment === 'card' ? 'checked' : ''}><div class="oc-body"><b>Credit / Debit Card (3D Secure 2.0)</b><span>Visa, Mastercard, RuPay, Amex</span></div>💳</label>
-        <label class="option-card ${co.payment === 'netbanking' ? 'active' : ''}"><input type="radio" name="pay" value="netbanking" ${co.payment === 'netbanking' ? 'checked' : ''}><div class="oc-body"><b>NetBanking (All Indian Banks)</b><span>HDFC, ICICI, SBI, Axis, Kotak & 40+ banks</span></div>🏦</label>
+        <label class="option-card ${co.payment === 'netbanking' ? 'active' : ''}"><input type="radio" name="pay" value="netbanking" ${co.payment === 'netbanking' ? 'checked' : ''}><div class="oc-body"><b>NetBanking (All Indian Banks)</b><span>HDFC, ICICI, SBI, Axis, Kotak &amp; 40+ banks</span></div>🏦</label>
         <label class="option-card ${co.payment === 'emi' ? 'active' : ''}"><input type="radio" name="pay" value="emi" ${co.payment === 'emi' ? 'checked' : ''}><div class="oc-body"><b>Bank EMI / No-Cost EMI</b><span>3 to 12 months easy installments (orders ₹3,000+)</span></div>📅</label>
         <label class="option-card ${co.payment === 'cod' ? 'active' : ''}"><input type="radio" name="pay" value="cod" ${co.payment === 'cod' ? 'checked' : ''}><div class="oc-body"><b>Cash / UPI on Delivery</b><span>Pay at your doorstep when your order arrives</span></div>💵</label>
         <form id="payForm" novalidate style="margin-top:18px">${payFields()}</form>
@@ -1277,6 +1438,17 @@ async function renderCheckout() {
 
   function payFields() {
     const totalAmt = quote ? quote.total : cartSubtotal();
+    if (co.payment === 'razorpay') {
+      return `
+        <div style="padding:16px;border-radius:14px;background:linear-gradient(135deg,color-mix(in srgb,#1976d2 12%,var(--surface)),var(--surface-2));border:1px solid color-mix(in srgb,#1976d2 30%,var(--border));margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="width:32px;height:32px;border-radius:8px;background:#0d47a1;color:#fff;display:grid;place-items:center;font-weight:900">R</span>
+            <div><b style="display:block">Razorpay Secure Gateway</b><span class="muted" style="font-size:.78rem">Order creation + HMAC-SHA256 signature verification</span></div>
+          </div>
+          <p class="muted" style="font-size:.83rem;margin:0">Click below to open the Razorpay Checkout modal supporting UPI QR, Cards, NetBanking, and Wallets.</p>
+        </div>
+        ${placeBtn('Pay with Razorpay')}`;
+    }
     if (co.payment === 'upi') {
       const upiUri = `upi://pay?pa=lumenstore@icici&pn=Lumen%20Retail&am=${totalAmt}&cu=INR`;
       return `
@@ -1575,8 +1747,31 @@ async function renderCheckout() {
       Object.keys(fd).forEach((k) => fieldErr(form, k, errs[k]));
       if (Object.keys(errs).length) return;
 
-      // Interactive gateway authorization step (3DS2 OTP / Bank Login / UPI Collect)
-      if (co.payment === 'card' || co.payment === 'emi') {
+      // Interactive gateway authorization step (Razorpay / 3DS2 OTP / Bank Login / UPI Collect)
+      if (co.payment === 'razorpay') {
+        const btn = $('#placeBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Creating Razorpay Order…';
+        let rzpOrder;
+        try {
+          rzpOrder = await api('/payments/razorpay/order', {
+            method: 'POST',
+            body: { items: state.cart.map(({ id, qty, color, size }) => ({ id, qty, color, size })), coupon: state.coupon, shippingMethod: co.shipping },
+          });
+        } catch (err) {
+          toast(err.message, { type: 'error' });
+          btn.disabled = false;
+          btn.innerHTML = `${ICON.lock} Pay with Razorpay`;
+          return;
+        }
+        const rzpResult = await launchRazorpayCheckout({ rzpOrder, address: co.address });
+        if (!rzpResult) {
+          btn.disabled = false;
+          btn.innerHTML = `${ICON.lock} Pay with Razorpay${quote ? ' · ' + money(quote.total) : ''}`;
+          return toast('Razorpay checkout cancelled', { type: 'error' });
+        }
+        Object.assign(payment, rzpResult);
+      } else if (co.payment === 'card' || co.payment === 'emi') {
         const net = cardBrand(payment.cardNumber) || 'CARD';
         const ok = await authorizeGatewayModal({ title: `${net} 3D Secure 2.0`, subtitle: `Card ending •••• ${payment.cardNumber.slice(-4)}`, badge: '3DS2 ACS', amount: totalAmt, mode: 'otp' });
         if (!ok) return toast('Payment authorization cancelled', { type: 'error' });
@@ -1634,6 +1829,7 @@ function confetti() {
 
 const fmtPayment = (p) => {
   if (!p) return '';
+  if (p.method === 'razorpay') return `Razorpay (${p.subMethod || 'Verified'}${p.meta ? ' · ' + p.meta : ''})`;
   if (p.method === 'card') return `${p.network || 'CARD'} •••• ${p.last4 || ''}`;
   if (p.method === 'upi') return `UPI (${p.upiId || p.upiApp || 'UTR ' + (p.utr || '')})`;
   if (p.method === 'netbanking') return `NetBanking · ${p.bankName || p.bankCode || ''}`;
