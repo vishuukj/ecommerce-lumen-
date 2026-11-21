@@ -363,7 +363,7 @@ function initHeader() {
     if (e.key === 'Escape') { closeModal(); closeDrawers(); }
   });
 
-  $('#footerNewsletter').addEventListener('submit', (e) => { e.preventDefault(); e.target.reset(); toast('You\'re subscribed! Check your inbox 💌'); });
+  $('#footerNewsletter')?.addEventListener('submit', (e) => { e.preventDefault(); e.target.reset(); toast('You\'re subscribed! Check your inbox 💌'); });
 }
 
 // Global delegated clicks
@@ -422,6 +422,9 @@ async function router() {
   const routes = {
     '': renderHome, shop: renderShop, product: renderProduct, cart: renderCartPage, checkout: renderCheckout,
     order: renderOrder, account: renderAccount, wishlist: renderWishlist, help: renderHelp,
+    'mailing-list': renderInfoPage, 'gift-cards': renderInfoPage, about: renderInfoPage,
+    shipping: renderInfoPage, returns: renderInfoPage, 'start-return': renderInfoPage,
+    terms: renderInfoPage, privacy: renderInfoPage, contact: renderInfoPage, 'what-is-lumen': renderInfoPage,
   };
   const fn = routes[parts[0] || ''] || renderNotFound;
   try {
@@ -1994,21 +1997,239 @@ async function renderWishlist({ isCurrent }) {
 
 // ---------- Help ----------
 function renderHelp() {
-  setTitle('Help center');
+  setTitle('Help Centre');
   const faqs = [
     ['How long does delivery take?', 'Standard delivery takes 3–5 business days. Express delivery arrives within 1–2 business days in most cities.'],
     ['Is shipping free?', 'Yes! Standard shipping is free on all orders over ₹999. Below that, a flat ₹79 fee applies. Express delivery costs ₹149.'],
     ['What is your return policy?', 'You can return most items within 10 days of delivery for a full refund, as long as they are unused and in original packaging.'],
-    ['Which payment methods do you accept?', 'We accept all major credit and debit cards (Visa, Mastercard, RuPay, Amex), UPI, and Cash on Delivery for orders up to ₹50,000.'],
-    ['How do I track my order?', 'Sign in and go to My Account → Your orders to see live order status. You will also receive email updates.'],
+    ['Which payment methods do you accept?', 'We accept all major credit and debit cards (Visa, Mastercard, RuPay, Amex), UPI (QR, Intent, VPA), NetBanking across 40+ banks, No-Cost Bank EMI, and Cash on Delivery for orders up to ₹50,000.'],
+    ['How do I track my order?', 'Sign in and go to My Account → Your orders to see live order status. You can also ask our 24/7 Lumen AI Chatbot in the bottom-right corner.'],
     ['Can I cancel my order?', 'Yes — orders can be cancelled from your account any time before they are shipped. Refunds are processed within 3–5 business days.'],
   ];
   $('#app').innerHTML = `
-  <div class="container page-head" style="max-width:820px"><div class="breadcrumbs"><a href="#/">Home</a> / <span>Help</span></div><h1>How can we help?</h1><p class="muted">Answers to the most common questions about orders, shipping and returns.</p></div>
+  <div class="container page-head" style="max-width:820px"><div class="breadcrumbs"><a href="#/">Home</a> / <span>Help Centre</span></div><h1>How can we help?</h1><p class="muted">Answers to the most common questions about orders, shipping and returns.</p></div>
   <div class="container faq" style="max-width:820px;padding-bottom:60px">
     ${faqs.map(([q, a], i) => `<details ${i === 0 ? 'open' : ''}><summary>${q}</summary><p>${a}</p></details>`).join('')}
-    <div class="panel" style="margin-top:24px;text-align:center"><h3>Still need help?</h3><p class="muted">Our support team is available 24/7 at <b>support@lumen.store</b> or <b>1800-123-4567</b>.</p></div>
+    <div class="panel" style="margin-top:24px;text-align:center"><h3>Still need help?</h3><p class="muted">Our support team is available 24/7 at <b>support@lumen.store</b> or <b>1800-123-4567</b>.</p><a class="btn btn-primary btn-sm" href="#/contact">Contact Us</a></div>
   </div>`;
+}
+
+// ---------- Footer Info & Interactive Pages ----------
+function renderInfoPage({ parts }) {
+  const slug = parts[0];
+  const pages = {
+    'mailing-list': {
+      title: 'Join Our Mailing List',
+      sub: 'Be the first to hear about new product drops, private sales, and members-only perks.',
+      html: `
+        <div class="panel" style="max-width:540px;margin:0 auto;text-align:center;padding:36px 28px">
+          <div style="font-size:2.6rem;margin-bottom:8px">💌</div>
+          <h3>Unlock ₹250 off + 10% Welcome Bonus</h3>
+          <p class="muted">Subscribe below and receive instant promo code <b>WELCOME10</b> in your inbox.</p>
+          <form class="form-stack" id="mailingForm" style="text-align:left;margin-top:18px">
+            <div class="field"><label>Full name</label><input class="input" name="name" placeholder="Aarav Sharma" required></div>
+            <div class="field"><label>Email address</label><input class="input" type="email" name="email" placeholder="you@example.com" required></div>
+            <button class="btn btn-primary btn-block">Join Mailing List</button>
+          </form>
+        </div>`,
+      bind: () => {
+        $('#mailingForm')?.addEventListener('submit', (e) => {
+          e.preventDefault();
+          e.target.reset();
+          toast('Subscribed! Use code WELCOME10 at checkout 🎉');
+        });
+      },
+    },
+    'gift-cards': {
+      title: 'Lumen Digital Gift Cards',
+      sub: 'Give the gift of choice. Delivered instantly via email with no expiry date.',
+      html: `
+        <div class="panel" style="max-width:640px;margin:0 auto">
+          <h3>🎁 Send a Digital Gift Card</h3>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0" id="gcAmounts">
+            ${[500, 1000, 2500, 5000].map((a, i) => `<button type="button" class="chip ${i === 1 ? 'active' : ''}" data-gcamt="${a}">${money(a)}</button>`).join('')}
+          </div>
+          <form class="form-stack" id="gcForm">
+            <div class="grid-2">
+              <div class="field"><label>Recipient's name</label><input class="input" name="rname" placeholder="Priya Mehta" required></div>
+              <div class="field"><label>Recipient's email</label><input class="input" type="email" name="remail" placeholder="priya@example.com" required></div>
+            </div>
+            <div class="field"><label>Personal message (optional)</label><textarea class="input" name="msg" rows="3" placeholder="Wishing you the happiest birthday!"></textarea></div>
+            <button class="btn btn-primary" id="gcBtn">Purchase Gift Card · ₹1,000</button>
+          </form>
+        </div>`,
+      bind: () => {
+        let amt = 1000;
+        $$('[data-gcamt]').forEach((b) => b.addEventListener('click', () => {
+          amt = Number(b.dataset.gcamt);
+          $$('[data-gcamt]').forEach((x) => x.classList.toggle('active', x === b));
+          $('#gcBtn').textContent = `Purchase Gift Card · ${money(amt)}`;
+        }));
+        $('#gcForm')?.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const code = 'GIFT-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+          e.target.reset();
+          toast(`Gift card (${money(amt)}) generated! Code: ${code} 🎁`);
+        });
+      },
+    },
+    about: {
+      title: 'About Us',
+      sub: 'Thoughtfully curated everyday essentials — built for modern living.',
+      html: `
+        <div class="panel" style="display:grid;gap:16px">
+          <h3>Our Story</h3>
+          <p>Founded with a single belief — great design and reliable quality shouldn't come with a luxury markup — <b>Lumen</b> partners directly with independent makers and top manufacturers across electronics, fashion, home, beauty, and fitness.</p>
+          <div class="grid-3">
+            <div class="panel" style="background:var(--surface-2)"><b>120,000+</b><span class="muted" style="display:block;font-size:.85rem">Happy customers across India</span></div>
+            <div class="panel" style="background:var(--surface-2)"><b>4.6 ★</b><span class="muted" style="display:block;font-size:.85rem">Average verified product rating</span></div>
+            <div class="panel" style="background:var(--surface-2)"><b>10-Day</b><span class="muted" style="display:block;font-size:.85rem">No-questions-asked returns</span></div>
+          </div>
+        </div>`,
+    },
+    'what-is-lumen': {
+      title: 'What is Lumen?',
+      sub: 'Your all-in-one destination for curated lifestyle, tech, and home essentials.',
+      html: `
+        <div class="panel" style="display:grid;gap:14px">
+          <h3>Designed Around You</h3>
+          <p><b>Lumen</b> brings together hand-tested products across six core categories — Electronics, Fashion, Home & Living, Beauty, Sports & Fitness, and Accessories — backed by transparent pricing, instant UPI/NetBanking/3DS2 checkout, and 24/7 AI + human support.</p>
+          <ul class="feature-list">
+            <li>Direct-to-consumer pricing with up to 50% off traditional retail MRP</li>
+            <li>Same-day dispatch & free delivery on orders above ₹999</li>
+            <li>100% genuine products with full manufacturer warranty</li>
+            <li>Instant refunds on returns and cancellations</li>
+          </ul>
+          <div style="margin-top:8px"><a class="btn btn-primary" href="#/shop">Explore the Catalog ${ICON.arrow}</a></div>
+        </div>`,
+    },
+    shipping: {
+      title: 'Shipping & Delivery',
+      sub: 'Fast, trackable delivery to 19,000+ PIN codes across India.',
+      html: `
+        <div class="panel" style="display:grid;gap:14px">
+          <ul class="feature-list">
+            <li><b>Free Standard Shipping:</b> Automatically applied on all orders of ₹999 or more (arrives in 3–5 business days). Orders below ₹999 carry a flat ₹79 fee.</li>
+            <li><b>Express Delivery (₹149):</b> Priority air dispatch arriving within 1–2 business days in metro and Tier-1 cities.</li>
+            <li><b>Same-Day Dispatch:</b> Orders placed before 2:00 PM IST ship out the same business day.</li>
+            <li><b>Live Tracking:</b> Track every milestone (Confirmed → Packed → Shipped → Delivered) from <a href="#/account" style="color:var(--primary);font-weight:700">My Account</a> or via our AI Support Chatbot.</li>
+          </ul>
+        </div>`,
+    },
+    returns: {
+      title: 'Returns & Refunds Policy',
+      sub: 'Shop with confidence — 10-day hassle-free returns and rapid refunds.',
+      html: `
+        <div class="panel" style="display:grid;gap:14px">
+          <ul class="feature-list">
+            <li><b>10-Day Return Window:</b> Return or exchange any item within 10 days of delivery as long as it is unused, unwashed, and in its original packaging with tags intact.</li>
+            <li><b>Free Reverse Pickup:</b> Our courier partner picks up the return directly from your doorstep at no extra cost.</li>
+            <li><b>Fast Refunds:</b> Refunds are initiated within 24 hours of quality check and credited to your original UPI, Card, or Bank account in 3–5 business days.</li>
+          </ul>
+          <div style="margin-top:8px"><a class="btn btn-primary" href="#/start-return">Start a Return Request ${ICON.arrow}</a></div>
+        </div>`,
+    },
+    'start-return': {
+      title: 'Start a Return',
+      sub: 'Submit a return or replacement request in under a minute.',
+      html: `
+        <form class="panel form-stack" id="returnForm" style="max-width:560px;margin:0 auto">
+          <div class="field"><label>Order Number</label><input class="input" name="orderId" placeholder="e.g. LMNMWQ..." required></div>
+          <div class="field"><label>Email or Mobile used for order</label><input class="input" name="contact" value="${esc(state.user?.email || '')}" placeholder="you@example.com" required></div>
+          <div class="field"><label>Reason for return</label>
+            <select class="input" name="reason" required>
+              <option value="">Select a reason</option>
+              <option>Size or fit issue</option>
+              <option>Received damaged or defective item</option>
+              <option>Changed my mind</option>
+              <option>Wrong item delivered</option>
+            </select>
+          </div>
+          <div class="field"><label>Resolution preferred</label>
+            <select class="input" name="resolution" required>
+              <option>Full refund to original payment method</option>
+              <option>Instant Lumen Store Credit (+5% bonus)</option>
+              <option>Replacement with same item</option>
+            </select>
+          </div>
+          <button class="btn btn-primary">Submit Return Request</button>
+        </form>`,
+      bind: () => {
+        $('#returnForm')?.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const fd = Object.fromEntries(new FormData(e.target));
+          e.target.reset();
+          toast(`Return request logged for ${fd.orderId.toUpperCase()}! Pickup scheduled within 24h 📦`);
+        });
+      },
+    },
+    terms: {
+      title: 'Terms & Conditions',
+      sub: 'Last updated: November 2026',
+      html: `
+        <div class="panel" style="display:grid;gap:12px">
+          <h3>1. Use of the Platform</h3>
+          <p class="muted">By accessing and placing orders on Lumen Retail Pvt. Ltd., you agree to provide accurate billing, shipping, and contact information.</p>
+          <h3>2. Pricing & Availability</h3>
+          <p class="muted">All prices are listed in Indian Rupees (INR) and are inclusive of GST. Promotional codes (such as WELCOME10, FLAT500, FREESHIP) are validated server-side at checkout.</p>
+          <h3>3. Warranty & Liability</h3>
+          <p class="muted">Products carry their respective manufacturer warranties as stated on individual specification tabs. Lumen's maximum liability is limited to the purchase price of the order.</p>
+        </div>`,
+    },
+    privacy: {
+      title: 'Privacy Policy',
+      sub: 'How we protect and handle your personal data.',
+      html: `
+        <div class="panel" style="display:grid;gap:12px">
+          <h3>1. Data We Collect</h3>
+          <p class="muted">We collect only the information needed to fulfil your orders and secure your account: name, email, phone number, shipping addresses, and order history.</p>
+          <h3>2. Payment Security</h3>
+          <p class="muted">We never store raw credit/debit card numbers, CVVs, or NetBanking passwords. All card and UPI payments are processed through 3D Secure 2.0 / NPCI gateways and only the last 4 digits or transaction references are retained on receipts.</p>
+          <h3>3. Your Rights</h3>
+          <p class="muted">You can update your profile, manage saved addresses, or sign out of all active devices at any time under <a href="#/account" style="color:var(--primary);font-weight:700">My Account → Profile & Security</a>.</p>
+        </div>`,
+    },
+    contact: {
+      title: 'Contact Us',
+      sub: 'We are here 24/7 — reach out via message, email, phone, or our AI Support Assistant.',
+      html: `
+        <div class="grid-2" style="align-items:start">
+          <form class="panel form-stack" id="contactForm">
+            <h3>✉️ Send us a message</h3>
+            <div class="field"><label>Your name</label><input class="input" name="name" value="${esc(state.user?.name || '')}" required></div>
+            <div class="field"><label>Email address</label><input class="input" type="email" name="email" value="${esc(state.user?.email || '')}" required></div>
+            <div class="field"><label>Order ID (optional)</label><input class="input" name="orderId" placeholder="LMN..."></div>
+            <div class="field"><label>Message</label><textarea class="input" name="msg" rows="4" placeholder="How can we help you today?" required></textarea></div>
+            <button class="btn btn-primary">Send Message</button>
+          </form>
+          <div class="panel" style="display:grid;gap:14px">
+            <h3>📞 Direct Channels</h3>
+            <div><b>Customer Support Email</b><div class="muted">support@lumen.store (replies within 2 hours)</div></div>
+            <div><b>Toll-Free Helpline</b><div class="muted">1800-123-4567 (9:00 AM – 11:00 PM IST)</div></div>
+            <div><b>Corporate Office</b><div class="muted">Lumen Retail Pvt. Ltd., Indiranagar, Bengaluru, Karnataka 560038</div></div>
+          </div>
+        </div>`,
+      bind: () => {
+        $('#contactForm')?.addEventListener('submit', (e) => {
+          e.preventDefault();
+          e.target.reset();
+          toast('Message received! Our support team will reply shortly 💬');
+        });
+      },
+    },
+  };
+
+  const page = pages[slug];
+  if (!page) return renderNotFound();
+  setTitle(page.title);
+  $('#app').innerHTML = `
+    <div class="container page-head" style="max-width:860px">
+      <div class="breadcrumbs"><a href="#/">Home</a> / <span>${esc(page.title)}</span></div>
+      <h1>${esc(page.title)}</h1>
+      <p class="muted">${esc(page.sub)}</p>
+    </div>
+    <div class="container" style="max-width:860px;padding-bottom:64px">${page.html}</div>`;
+  page.bind?.();
 }
 
 function renderNotFound() {
