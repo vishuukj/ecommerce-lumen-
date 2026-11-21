@@ -39,9 +39,9 @@ body.admin { background: var(--bg); }
 .stat .ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 1.2rem; background: var(--surface-2); margin-bottom: 12px; }
 .stat span { color: var(--muted); font-size: .82rem; font-weight: 600; }
 .stat b { display: block; font-size: 1.6rem; letter-spacing: -.02em; margin-top: 2px; }
-.stat.hl { background: var(--grad); color: #fff; border: 0; }
+.stat.hl { background: #020202; color: #FCA59D; border: 1px solid rgba(252, 165, 157, .35); }
 .stat.hl span { color: rgba(255,255,255,.8); }
-.stat.hl .ico { background: rgba(255,255,255,.2); }
+.stat.hl .ico { background: rgba(252, 165, 157, .18); }
 .dash-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 18px; }
 .box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; min-width: 0; }
 .box h3 { font-size: 1rem; display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }

@@ -469,9 +469,9 @@ const setTitle = (t) => { document.title = t ? `${t} — Lumen` : 'Lumen — Sho
 
 // ---------- Home ----------
 const SLIDES = [
-  { eyebrow: 'New season drop', title: 'Sound that moves<br>with you.', text: 'Studio-grade wireless audio with all-day comfort. Up to 40% off this week.', cta: '#/shop?category=electronics', img: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=900&q=80&auto=format&fit=crop', bg: 'linear-gradient(120deg,#4338ca 0%,#7c3aed 55%,#db2777 100%)', card: ['Rated', '4.6 ★ by 2,300+'] },
-  { eyebrow: 'Street ready', title: 'Step up your<br>everyday style.', text: 'Fresh sneakers, jackets and essentials designed to keep up with you.', cta: '#/shop?category=fashion', img: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=900&q=80&auto=format&fit=crop', bg: 'linear-gradient(120deg,#be123c 0%,#ea580c 60%,#f59e0b 100%)', card: ['Starting at', '₹699'] },
-  { eyebrow: 'Make it home', title: 'Spaces that feel<br>like you.', text: 'Thoughtfully designed furniture and decor for calm, beautiful living.', cta: '#/shop?category=home', img: 'https://images.unsplash.com/photo-1567538096630-e0c55bd6374c?w=900&q=80&auto=format&fit=crop', bg: 'linear-gradient(120deg,#065f46 0%,#0d9488 55%,#0ea5e9 100%)', card: ['Free delivery', 'on orders ₹999+'] },
+  { eyebrow: 'New season drop', title: 'Sound that moves<br>with you.', text: 'Studio-grade wireless audio with all-day comfort. Up to 40% off this week.', cta: '#/shop?category=electronics', img: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=900&q=80&auto=format&fit=crop', bg: 'radial-gradient(900px 420px at 85% 20%, rgba(252,165,157,.38), transparent), linear-gradient(125deg,#020202 0%,#161110 60%,#2b1c1a 100%)', card: ['Rated', '4.6 ★ by 2,300+'] },
+  { eyebrow: 'Street ready', title: 'Step up your<br>everyday style.', text: 'Fresh sneakers, jackets and essentials designed to keep up with you.', cta: '#/shop?category=fashion', img: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=900&q=80&auto=format&fit=crop', bg: 'radial-gradient(850px 420px at 80% 15%, rgba(252,165,157,.42), transparent), linear-gradient(125deg,#020202 0%,#1e1413 55%,#3a2220 100%)', card: ['Starting at', '₹699'] },
+  { eyebrow: 'Make it home', title: 'Spaces that feel<br>like you.', text: 'Thoughtfully designed furniture and decor for calm, beautiful living.', cta: '#/shop?category=home', img: 'https://images.unsplash.com/photo-1567538096630-e0c55bd6374c?w=900&q=80&auto=format&fit=crop', bg: 'radial-gradient(900px 420px at 85% 25%, rgba(252,165,157,.35), transparent), linear-gradient(125deg,#020202 0%,#141414 60%,#291b19 100%)', card: ['Free delivery', 'on orders ₹999+'] },
 ];
 
 async function renderHome(ctx) {
@@ -1846,7 +1846,7 @@ async function renderCheckout() {
 
 // ---------- Order confirmation ----------
 function confetti() {
-  const colors = ['#5b5bf7', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#0ea5e9'];
+  const colors = ['#FCA59D', '#020202', '#ffffff', '#f88b81', '#ffd4cf', '#1f1f1f'];
   for (let i = 0; i < 120; i++) {
     const c = document.createElement('i');
     c.className = 'confetti';
